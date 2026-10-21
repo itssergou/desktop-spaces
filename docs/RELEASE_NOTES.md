@@ -1,17 +1,19 @@
-# DesktopSpaces 0.1.1 preview
+# DesktopSpaces 0.1.2 preview
 
-- Fix background hit testing on the original Windows desktop with cross-process MSAA.
-- Keep Shell views warm and preload nearby spaces; defer layout/config persistence after switching.
-- Replace static wallpaper bitmaps with a transparent icon surface and an OLE-enabled background input surface.
-- Correct ExplorerBrowser's no-border flag, initialize OLE explicitly, and keep auto-arrange disabled.
-- Handle same-folder icon moves and forward external drops to the Shell view's IDropTarget.
-- Restore original icon visibility as well as the Desktop path after exit or a crash.
-- Add settings drag reorder, F2 and Explorer-style delayed click rename, centred dialog buttons,
-  a short indicator tooltip, and explicit transfer instructions.
-- Replace “Remove from list” with “Delete”, fix stale row indexes and retain the deleted space's files.
-- Verify startup registry writes, quote executable paths and refresh an enabled startup entry after app relocation.
+Fixes for follow-up testing:
 
-Validation: 41 core checks, 3 Windows regression checks, native Shell/OLE probes,
-normal-exit and crash-recovery integration checks. See VALIDATION.md for remaining
-physical Windows 10/multi-monitor, continuous Alt-drag and Wallpaper Engine acceptance tests.
-A computer restart/login test is explicitly recorded as pending.
+- Bind additional folders through the explicit This PC / volume namespace. Shell PIDLs must not
+  change their meaning when the Desktop Known Folder changes during a transfer.
+- Capture source paths before changing Desktop during a drag from the original desktop, and
+  retain that stable data object through Drop. Stabilize file clipboard data before switching away.
+- Forward drops over icons as well as empty background through the same handler.
+- Avoid repeated desktop-size and Z-order changes on the health timer. Keep valid native list
+  handles and item names cached, enable native list double buffering, and avoid redundant theme redraws.
+- Move periodic settings flushes off the UI thread. Revision checks prevent an old background
+  snapshot from overwriting newer settings. Skip layout collection while dragging.
+- Replace the square question-mark button with a small antialiased circular control.
+
+Validation includes a new opt-in Test-Transfer.ps1: transfer a fixture out and back while changing
+Desktop Known Folder, verify source paths and file content, and restore the original desktop.
+This check is kept out of CI because it temporarily redirects the current user's Desktop.
+Physical drag responsiveness, Wallpaper Engine and reboot/login still require user acceptance.

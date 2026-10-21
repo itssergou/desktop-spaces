@@ -5,6 +5,11 @@ internal static class SurfaceProbe
     public static void Run(string[] args)
     {
         var root=Program.DiagnosticRoot("surface",args);
+        if(args.Contains("--redirect-during-drop") && File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DesktopSpaces","recovery.json")))
+        {
+            JsonStore.Write(Path.Combine(root,"report.json"),new { Success=false,Errors=new[]{"Сначала завершите работающий экземпляр DesktopSpaces."} });
+            Environment.ExitCode=1;return;
+        }
         var data=Path.Combine(root,"data",Guid.NewGuid().ToString("N"));
         var source=Path.Combine(data,"source");var target=Path.Combine(data,"target");
         Directory.CreateDirectory(source);Directory.CreateDirectory(target);
@@ -21,12 +26,26 @@ internal static class SurfaceProbe
         var from=new ShellFolderView(new Space { Folder=source },e=>errors.Add(e.ToString()));grid.Controls.Add(from,0,1);
         var wallpaper=new AnimatedWallpaper { Dock=DockStyle.Fill };grid.Controls.Add(wallpaper,1,1);
         using var host=new DesktopHost(false,_=>{});
+        ShellFolderView? returnView=null;
+        DesktopSession? redirectedSession=null;
+        var redirectedStarted=false;
         form.Shown+=(_,_)=> {
+            if(args.Contains("--redirect-during-drop"))
+            {
+                var journal=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DesktopSpaces","recovery.json");
+                var desktop=new WindowsDesktopPath();redirectedSession=new DesktopSession(desktop,journal,Native.RestoreDesktopIcons);
+                using var process=Process.GetCurrentProcess();redirectedSession.Start(desktop.Get(),process.Id,process.StartTime.ToUniversalTime().Ticks);
+                redirectedStarted=true;
+                var watchdog=new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute=false,CreateNoWindow=true,WindowStyle=ProcessWindowStyle.Hidden };
+                watchdog.ArgumentList.Add("--watchdog");watchdog.ArgumentList.Add(journal);Process.Start(watchdog)?.Dispose();
+                redirectedSession.Switch(source);
+            }
             host.Attach(wallpaper.Handle);
             host.Prepare(space,e=>errors.Add(e.ToString()),()=>host.ActivateSpace(space.Id,space.Name,false));
+            if(args.Contains("--round-trip"))returnView=host.Prepare(from.Space,e=>errors.Add(e.ToString()),()=>{});
         };
         using var timer=new System.Windows.Forms.Timer { Interval=1500 };
-        var exercised=false;uint? importEffect=null,moveEffect=null;var ticks=0;
+        var exercised=false;uint? importEffect=null,moveEffect=null;var ticks=0;var imported=false;var returning=false;
         timer.Tick+=(_,_)=> {
             try
             {
@@ -35,13 +54,22 @@ internal static class SurfaceProbe
                 {
                     exercised=true;
                     moveEffect=DropFrom(host.ActiveView,host,wallpaper.PointToScreen(new Point(300,200)));
-                    importEffect=DropFrom(from,host,wallpaper.PointToScreen(new Point(400,300)));
+                    importEffect=DropFrom(from,host,wallpaper.PointToScreen(new Point(400,300)),()=>redirectedSession?.Switch(target),root);
                 }
                 host.ActiveView?.SaveLayout();
                 var drop=host.ActiveView?.GetDropTarget();var hasDrop=drop is not null;
                 if(drop is not null && Marshal.IsComObject(drop))Marshal.ReleaseComObject(drop);
                 var transferred=File.Exists(Path.Combine(target,"Перенести сюда.txt"));
-                var success=errors.Count==0 && transferred && space.Layout.TryGetValue("Передвинуть значок.txt",out var position) && position.X>100 && position.Y>100;
+                imported|=transferred;
+                if(args.Contains("--round-trip") && transferred && space.Layout.ContainsKey("Перенести сюда.txt") && !returning && returnView?.IsReady==true)
+                {
+                    returning=true;
+                    DropFrom(host.ActiveView!,host,wallpaper.PointToScreen(new Point(300,300)),()=> {
+                        redirectedSession?.Switch(source);host.ActivateSpace(from.Space.Id,"Обратный перенос",false);
+                    },root,"Перенести сюда.txt");
+                }
+                var returned=returning && !File.Exists(Path.Combine(target,"Перенести сюда.txt")) && File.Exists(Path.Combine(source,"Перенести сюда.txt"));
+                var success=errors.Count==0 && imported && (!args.Contains("--round-trip") || returned) && space.Layout.TryGetValue("Передвинуть значок.txt",out var position) && position.X>100 && position.Y>100;
                 JsonStore.Write(Path.Combine(root,"report.json"),new {
                     Errors=errors,Ready=host.ActiveView?.IsReady==true,
                     BackgroundKeyed=host.ActiveView is not null,
@@ -51,7 +79,7 @@ internal static class SurfaceProbe
                     HostStyle=Native.GetWindowLongPtr(host.Handle,-20).ToInt64(),
                     MoveEffect=moveEffect,ImportEffect=importEffect,
                     SourceReady=from.IsReady,Exercised=exercised,Arguments=args,
-                    Layout=space.Layout,Transferred=transferred,Success=success,
+                    Layout=space.Layout,Transferred=transferred,Imported=imported,Returned=returned,Success=success,
                     Source=source,Target=target
                 });
                 if(args.Contains("--exercise-drop") && !args.Contains("--keep-open") && (++ticks>=3 && success || ticks>=12))
@@ -59,17 +87,34 @@ internal static class SurfaceProbe
             }
             catch(Exception ex) { errors.Add(ex.ToString()); }
         };
-        form.Shown+=(_,_)=>timer.Start();Application.Run(form);
+        form.Shown+=(_,_)=>timer.Start();try{Application.Run(form);}finally{if(redirectedStarted)redirectedSession?.Restore();}
     }
-    private static uint DropFrom(ShellFolderView source,DesktopHost target,Point point)
+    private static uint DropFrom(ShellFolderView source,DesktopHost target,Point point,Action? beforeDrop=null,string? reportRoot=null,string? fileName=null)
     {
         var view=source.GetFolderView() ?? throw new InvalidOperationException();
         try
         {
-            Native.Check(view.SelectItem(0,1|4|16));
+            var selected=0;
+            if(fileName is not null)
+            {
+                selected=-1;Native.Check(view.ItemCount(2,out var count));
+                for(var i=0;i<count;i++)
+                {
+                    Native.Check(view.Item(i,out var pidl));
+                    try{if(ShellFolderView.ItemName(view,pidl)==fileName){selected=i;break;}}
+                    finally{Marshal.FreeCoTaskMem(pidl);}
+                }
+                if(selected<0)throw new FileNotFoundException("Не найден тестовый файл для обратного переноса.",fileName);
+            }
+            Native.Check(view.SelectItem(selected,1|4|16));
             var iid=typeof(System.Runtime.InteropServices.ComTypes.IDataObject).GUID;
             Native.Check(view.Items(1,ref iid,out var obj));
-            try { return target.ExerciseDrop((System.Runtime.InteropServices.ComTypes.IDataObject)obj,point); }
+            try {
+                var data=(System.Runtime.InteropServices.ComTypes.IDataObject)obj;
+                var before=OleFiles.Read(data);beforeDrop?.Invoke();var after=OleFiles.Read(data);
+                if(reportRoot is not null)JsonStore.Write(Path.Combine(reportRoot,"source-paths.json"),new { Before=before,After=after,AllSourcesExist=before.All(File.Exists) });
+                return target.ExerciseDrop(data,point);
+            }
             finally { Marshal.ReleaseComObject(obj); }
         }
         finally { Marshal.ReleaseComObject(view); }

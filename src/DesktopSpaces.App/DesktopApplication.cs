@@ -22,6 +22,9 @@ internal sealed class DesktopApplication : ApplicationContext
     private int? _pendingSwitch;
     private long _lastSwitchMilliseconds;
     private bool _registeredAutoStart;
+    private string? _pendingDesktopPath;
+    private readonly object _configWriteGate=new();
+    private int _configRevision;
     private readonly CommandWindow _commands;
 
     public DesktopApplication(bool demo)
@@ -68,8 +71,11 @@ internal sealed class DesktopApplication : ApplicationContext
             if(!demo)StartWatchdog();
             CreateHost();
             _health.Tick+=(_,_)=>CheckHealth();_health.Start();
-            _saveTimer.Tick+=(_,_)=> { try { _host.SaveLayouts();SaveConfig(); } catch(Exception ex){Report(ex);} };_saveTimer.Start();
-            _deferredSave.Tick+=(_,_)=> { _deferredSave.Stop();try{_host.SaveLayouts();SaveConfig();}catch(Exception ex){Report(ex);} };
+            _saveTimer.Tick+=(_,_)=> {
+                if((Native.GetAsyncKeyState(1)&0x8000)!=0)return;
+                try { _host.SaveLayouts();SaveConfigInBackground(); } catch(Exception ex){Report(ex);}
+            };_saveTimer.Start();
+            _deferredSave.Tick+=(_,_)=> { _deferredSave.Stop();try{SaveConfigInBackground();}catch(Exception ex){Report(ex);} };
             Application.ThreadException+=OnThreadException;
             SystemEvents.DisplaySettingsChanged+=OnDisplayChanged;
             SystemEvents.SessionEnding+=OnSessionEnding;
@@ -82,7 +88,7 @@ internal sealed class DesktopApplication : ApplicationContext
 
     private void CreateHost()
     {
-        _host=new DesktopHost(_demo,_session.RememberDesktopIcons);
+        _host=new DesktopHost(_demo,_session.RememberDesktopIcons) { PrepareDropData=PrepareDropData };
         _host.FormClosing+=(_,e)=> { if(!_stopping){e.Cancel=true;Stop();} };
         _host.Attach();
         _hooks=new InputHooks(_host,_config.Preferences,Switch,()=>Switch((_config.Spaces.FindIndex(s=>s.Id==_active)+1)%_config.Spaces.Count));
@@ -97,11 +103,12 @@ internal sealed class DesktopApplication : ApplicationContext
         if(_active==space.Id && (_host.ActiveView is not null || _host.NativeDesktopActive))return;
         _switching=true;
         var elapsed=Stopwatch.StartNew();
+        var nativeSource=_host.NativeDesktopActive;
         try
         {
             if(!_demo && index==0)
             {
-                _session.Switch(space.Folder);
+                ChangeDesktopPath(space.Folder,nativeSource);
                 _host.ActivateNativeDesktop(space.Id,$"1  ·  {space.Name}",_config.Preferences.ShowIndicator);
                 _active=_config.ActiveSpaceId=space.Id;
                 BuildMenu();_tray.Text="DesktopSpaces · "+space.Name[..Math.Min(space.Name.Length,45)];
@@ -111,7 +118,7 @@ internal sealed class DesktopApplication : ApplicationContext
                 if(_stopping)return;
                 try
                 {
-                    _session.Switch(space.Folder);
+                    ChangeDesktopPath(space.Folder,nativeSource);
                     _host.ActivateSpace(space.Id,$"{index+1}  ·  {space.Name}",_config.Preferences.ShowIndicator);
                     _active=_config.ActiveSpaceId=space.Id;
                     BuildMenu();
@@ -122,6 +129,22 @@ internal sealed class DesktopApplication : ApplicationContext
             });
         }
         catch(Exception ex){FinishSwitch();Report(ex);}
+    }
+
+    private void ChangeDesktopPath(string target,bool nativeSource)
+    {
+        if(!_demo && (Native.GetAsyncKeyState(1)&0x8000)!=0 && (nativeSource || _pendingDesktopPath is not null))
+        { _pendingDesktopPath=target;return; }
+        if(!_demo && nativeSource)OleFiles.StabilizeDesktopClipboard(_config.OriginalDesktop);
+        _session.Switch(target);_pendingDesktopPath=null;
+    }
+
+    private System.Runtime.InteropServices.ComTypes.IDataObject PrepareDropData(System.Runtime.InteropServices.ComTypes.IDataObject data)
+    {
+        if(_pendingDesktopPath is null)return data;
+        // Explorer's original desktop data object can have Desktop-relative IDs.
+        // Read its absolute source paths BEFORE changing what Desktop means.
+        return OleFiles.FreezeBeforeChange(data,()=>{_session.Switch(_pendingDesktopPath);_pendingDesktopPath=null;});
     }
 
     private void FinishSwitch()
@@ -182,7 +205,26 @@ internal sealed class DesktopApplication : ApplicationContext
         var conflicts=_hooks?.RefreshConflicts();
         if(conflicts?.Count>0)_tray.ShowBalloonTip(5000,"Сочетание занято","Не используются номера: "+string.Join(", ",conflicts)+". Выберите другой модификатор в настройках.",ToolTipIcon.Warning);
     }
-    private void SaveConfig() { _config.Validate();JsonStore.Write(_configPath,_config); }
+    private void SaveConfig()
+    {
+        _config.Validate();System.Threading.Interlocked.Increment(ref _configRevision);
+        lock(_configWriteGate)JsonStore.Write(_configPath,_config);
+    }
+    private void SaveConfigInBackground()
+    {
+        _config.Validate();
+        var snapshot=System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(_config);
+        var revision=System.Threading.Interlocked.Increment(ref _configRevision);
+        _=System.Threading.Tasks.Task.Run(()=> {
+            try
+            {
+                lock(_configWriteGate)
+                    if(revision==System.Threading.Volatile.Read(ref _configRevision))
+                        JsonStore.Write(_configPath,System.Text.Json.JsonSerializer.Deserialize<AppConfig>(snapshot)!);
+            }
+            catch(Exception ex) { Log(_root,ex); }
+        });
+    }
     private void WriteStatus()
     {
         if(_stopping || _host.IsDisposed)return;
@@ -231,6 +273,8 @@ internal sealed class DesktopApplication : ApplicationContext
     private void CheckHealth()
     {
         if(_stopping)return;
+        if(_pendingDesktopPath is not null && (Native.GetAsyncKeyState(1)&0x8000)==0)
+            try { _session.Switch(_pendingDesktopPath);_pendingDesktopPath=null; }catch(Exception ex){Report(ex);}
         try { if(!_host.IsDisposed)_host.MaintainViews(); }catch(Exception ex){Report(ex);}
         if(!_switching && !_host.IsDisposed && (_demo || Native.IsWindow(_host.DesktopParent)))
             try
@@ -253,6 +297,7 @@ internal sealed class DesktopApplication : ApplicationContext
     private void OnDisplayChanged(object? sender,EventArgs e) { if(!_host.IsDisposed)_host.BeginInvoke((Action)(()=>{_host.FitDesktop();_host.RefreshBackgrounds();})); }
     private void OnPreferenceChanged(object sender,UserPreferenceChangedEventArgs e)
     {
+        if(!_demo)return; // Live wallpaper is composited by Windows; no bitmap to rebuild.
         if(e.Category is UserPreferenceCategory.Desktop or UserPreferenceCategory.Color or UserPreferenceCategory.General)
             if(!_host.IsDisposed)_host.BeginInvoke((Action)_host.RefreshBackgrounds);
     }

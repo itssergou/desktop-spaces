@@ -89,7 +89,7 @@ internal sealed class SettingsForm : Form
         hotkeys.Controls.Add(modifier);preferences.Controls.Add(hotkeys);
         var indicatorRow=new FlowLayoutPanel { AutoSize=true,WrapContents=false,Margin=Padding.Empty };
         indicatorRow.Controls.Add(Check("Кратко показывать название при переключении",config.Preferences.ShowIndicator,v=>config.Preferences.ShowIndicator=v));
-        var help=new Button { Text="?",Size=new Size(24,24),FlatStyle=FlatStyle.Flat,Margin=new Padding(0,0,0,0),AccessibleName="Подсказка о названии пространства",TabStop=true };
+        var help=new HelpButton { Text="?",Margin=new Padding(0,0,0,0),AccessibleName="Подсказка о названии пространства",TabStop=true };
         const string explanation="Показывает номер и имя пространства на 1,2 секунды\nв правом верхнем углу после переключения.";
         _tips.SetToolTip(help,explanation);help.AccessibleDescription=explanation;
         help.Click+=(_,_)=>_tips.Show(explanation,help,0,help.Height,8000);

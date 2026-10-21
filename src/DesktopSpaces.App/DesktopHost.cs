@@ -10,6 +10,7 @@ internal sealed class DesktopHost : Form
     private bool _originalIconsVisible;
     private bool _ownsNativeSurface;
     private readonly Action<bool> _rememberIcons;
+    private Size _desktopSize;
     private readonly Label _indicator=new() { AutoSize=true, BackColor=Color.FromArgb(35,40,50), ForeColor=Color.White,
         Padding=new Padding(16,10,16,10), Font=new Font("Segoe UI",12,FontStyle.Bold), Visible=false };
     private readonly System.Windows.Forms.Timer _indicatorTimer=new() { Interval=1200 };
@@ -19,6 +20,7 @@ internal sealed class DesktopHost : Form
     public bool NativeDesktopActive { get; private set; }
     public bool IsPrepared(Guid id)=>_views.ContainsKey(id);
     public Guid ActiveSpaceId { get; private set; }
+    public Func<System.Runtime.InteropServices.ComTypes.IDataObject,System.Runtime.InteropServices.ComTypes.IDataObject>? PrepareDropData { get; set; }
 
     public DesktopHost(bool demo,Action<bool> rememberIcons)
     {
@@ -50,7 +52,7 @@ internal sealed class DesktopHost : Form
         if(!Native.SetLayeredWindowAttributes(handle,TransparentColorRef,255,1))throw new System.ComponentModel.Win32Exception();
         _originalIconsVisible=_ownsNativeSurface && Native.IsWindowVisible(Native.DesktopList());
         _rememberIcons(_originalIconsVisible);
-        _input=new DesktopInputSurface(()=>ActiveView);
+        _input=new DesktopInputSurface(()=>ActiveView) { PrepareData=data=>PrepareDropData?.Invoke(data) ?? data };
         Native.SetParent(_input.Handle,DesktopParent);
         _input.EnableTransparency();
         FitDesktop();
@@ -60,14 +62,19 @@ internal sealed class DesktopHost : Form
     {
         if(!_demo && Native.IsWindow(DesktopParent) && Native.GetClientRect(DesktopParent,out var rect))
         {
+            var reattached=false;
             if(Native.GetParent(Handle)!=DesktopParent)
             {
+                reattached=true;
                 Native.SetParent(Handle,DesktopParent);
                 Native.SetWindowLongPtr(Handle,-20,new IntPtr(Native.GetWindowLongPtr(Handle,-20).ToInt64()|0x80000));
                 Native.SetLayeredWindowAttributes(Handle,TransparentColorRef,255,1);
             }
             if(_input is not null && Native.GetParent(_input.Handle)!=DesktopParent)
-            { Native.SetParent(_input.Handle,DesktopParent);_input.EnableTransparency(); }
+            { Native.SetParent(_input.Handle,DesktopParent);_input.EnableTransparency();reattached=true; }
+            var size=new Size(rect.Right,rect.Bottom);
+            if(!reattached && size==_desktopSize)return;
+            _desktopSize=size;
             if(_input is not null)Native.SetWindowPos(_input.Handle,IntPtr.Zero,0,0,rect.Right,rect.Bottom,0x0010);
             var order=NativeDesktopActive && (Native.GetAsyncKeyState(1)&0x8000)!=0 ? new IntPtr(1) : IntPtr.Zero;
             Native.SetWindowPos(Handle,order,0,0,rect.Right,rect.Bottom,0x0010);
@@ -77,7 +84,7 @@ internal sealed class DesktopHost : Form
     public ShellFolderView Prepare(Space space,Action<Exception> error,Action ready)
     {
         if(_views.TryGetValue(space.Id,out var existing)) { if(existing.IsReady)ready();else existing.Ready+=ready;return existing; }
-        var view=new ShellFolderView(space,error) { Visible=false,BackgroundFactory=_demo?CreateBackground:null,LiveBackground=!_demo,BackColor=BackColor };
+        var view=new ShellFolderView(space,error) { Visible=false,BackgroundFactory=_demo?CreateBackground:null,LiveBackground=!_demo,BackColor=BackColor,DropProxy=_input };
         _views.Add(space.Id,view);
         view.Ready+=ready;
         Controls.Add(view);
@@ -170,7 +177,7 @@ internal sealed class DesktopHost : Form
 
     public void MaintainViews()
     {
-        foreach(var view in _views.Values)view.MaintainView();
+        ActiveView?.MaintainView();
         if((Native.GetAsyncKeyState(1)&0x8000)!=0)return;
         if(_ownsNativeSurface && !NativeDesktopActive)Native.ShowWindow(Native.DesktopList(),0);
         if(NativeDesktopActive && !_indicator.Visible)Hide();

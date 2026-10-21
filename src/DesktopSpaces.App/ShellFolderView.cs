@@ -7,8 +7,12 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
     private uint _cookie;
     private bool _ready;
     private IntPtr _configuredList;
+    private IntPtr _listHandle;
+    private IntPtr _proxyList;
+    public IDropTargetNative? DropProxy { get; set; }
     private readonly Space _space;
     private readonly Action<Exception> _error;
+    private readonly Dictionary<string,string?> _itemNames=new();
     public event Action? Ready;
     public Space Space => _space;
     public bool IsReady => _ready;
@@ -18,9 +22,10 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
     {
         get
         {
+            if(_listHandle!=IntPtr.Zero && Native.IsWindow(_listHandle))return _listHandle;
             var list=IntPtr.Zero;
             if(IsHandleCreated)Native.EnumChildWindows(Handle,(h,_)=>{if(Native.ClassName(h)=="SysListView32"){list=h;return false;}return true;},IntPtr.Zero);
-            return list;
+            return _listHandle=list;
         }
     }
 
@@ -42,11 +47,15 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
             Native.Check(_browser.SetPropertyBag("DesktopSpaces."+_space.Id.ToString("N")));
             Native.Check(Native.IUnknown_SetSite(_browser,this));
             var rect=new Native.Rect(ClientRectangle);
-            var settings=new Native.FolderSettings { ViewMode=1, Flags=0x20 | 0x4 | 0x800 | 0x100000 | 0x10000000 };
+            var settings=new Native.FolderSettings { ViewMode=1, Flags=0x20 | 0x800 | 0x100000 | 0x10000000 };
             Native.Check(_browser.Initialize(Handle,ref rect,ref settings));
             Native.Check(_browser.Advise(this,out _cookie));
             Native.Check(_browser.SetEmptyText("Дважды нажмите по пустому месту, чтобы сменить пространство"));
-            Native.Check(Native.SHParseDisplayName(_space.Folder,IntPtr.Zero,out var pidl,0,out _));
+            // Force the volume / This PC namespace. A Desktop-relative PIDL changes
+            // meaning when SHSetKnownFolderPath redirects Desktop during a drag.
+            var parsingName=_space.Folder.Length>2 && _space.Folder[1]==':'
+                ? "::{20D04FE0-3AEA-1069-A2D8-08002B30309D}\\"+_space.Folder : _space.Folder;
+            Native.Check(Native.SHParseDisplayName(parsingName,IntPtr.Zero,out var pidl,0,out _));
             try { Native.Check(_browser.BrowseToIDList(pidl,0)); }
             finally { Marshal.FreeCoTaskMem(pidl); }
         }
@@ -68,7 +77,7 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
         return _browser.GetCurrentView(ref iid,out var obj)>=0 ? (IFolderView)obj : null;
     }
 
-    private static string? ItemName(IFolderView view, IntPtr pidl)
+    internal static string? ItemName(IFolderView view, IntPtr pidl)
     {
         var folderId=new Guid("000214E6-0000-0000-C000-000000000046");
         Native.Check(view.GetFolder(ref folderId,out var folder));
@@ -101,7 +110,7 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
                 if(view.Item(i,out var pidl)<0)continue;
                 try
                 {
-                    var name=ItemName(view,pidl);
+                    var name=CachedItemName(view,pidl);
                     if(name is not null && view.GetItemPosition(pidl,out var point)>=0)
                         positions[name]=new IconPosition(point.X,point.Y);
                 }
@@ -125,7 +134,7 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
                 var retained=false;
                 try
                 {
-                    var name=ItemName(view,pidl);
+                    var name=CachedItemName(view,pidl);
                     if(name is not null && _space.Layout.TryGetValue(name,out var p))
                     { pidls.Add(pidl); points.Add(new Native.Point(p.X,p.Y)); retained=true; }
                 }
@@ -134,6 +143,15 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
             if(pidls.Count>0)Native.Check(view.SelectAndPositionItems((uint)pidls.Count,pidls.ToArray(),points.ToArray(),0x80));
         }
         finally { foreach(var p in pidls)Marshal.FreeCoTaskMem(p); Marshal.ReleaseComObject(view); }
+    }
+
+    private string? CachedItemName(IFolderView view,IntPtr pidl)
+    {
+        var size=checked((int)Native.ILGetSize(pidl));var bytes=new byte[size];Marshal.Copy(pidl,bytes,0,size);
+        var key=Convert.ToHexString(bytes);
+        if(_itemNames.TryGetValue(key,out var name))return name;
+        if(_itemNames.Count>=4096)_itemNames.Clear();
+        return _itemNames[key]=ItemName(view,pidl);
     }
 
     public bool IsEmptyPoint(System.Drawing.Point screenPoint)
@@ -201,7 +219,7 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
                     try { Native.Check(((IFolderView2)obj).SetCurrentFolderFlags(1,0)); }
                     finally { Marshal.ReleaseComObject(obj); }
                 }
-                _ready=true;UpdateBackground();RestoreLayout();Ready?.Invoke();Ready=null;
+                _ready=true;UpdateBackground();InstallDropProxy();RestoreLayout();Ready?.Invoke();Ready=null;
             } catch(Exception ex) { _error(ex); }
         }));
         return 0;
@@ -255,6 +273,7 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
         if(disposing)Application.RemoveMessageFilter(this);
         if(_browser is not null)
         {
+            if(_proxyList!=IntPtr.Zero && Native.IsWindow(_proxyList))Native.RevokeDragDrop(_proxyList);
             _browser.Unadvise(_cookie); _browser.Destroy();
             Native.IUnknown_SetSite(_browser,null);
             Marshal.ReleaseComObject(_browser); _browser=null;
@@ -284,11 +303,15 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
         _configuredList=list;
         if(LiveBackground)
         {
+            // Theme notifications also arrive when the Desktop path changes.
+            // Do not invalidate a whole layered desktop when its colour is intact.
+            if(Native.SendMessage(list,0x1000,IntPtr.Zero,IntPtr.Zero).ToInt64()==DesktopHost.TransparentColorRef)return;
             BackColor=DesktopHost.TransparentColor;
             var clear=new Native.BackgroundImage();
             Native.SendMessage(list,0x108A,IntPtr.Zero,ref clear);
             Native.SendMessage(list,0x1001,IntPtr.Zero,new IntPtr(DesktopHost.TransparentColorRef));
             Native.SendMessage(list,0x1026,IntPtr.Zero,new IntPtr(-1));
+            Native.SendMessage(list,0x1036,new IntPtr(0x10000),new IntPtr(0x10000)); // LVS_EX_DOUBLEBUFFER
             return;
         }
         if(BackgroundFactory is null)return;
@@ -302,8 +325,8 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
     {
         if(!_ready || IsDisposed)return;
         var list=ListHandle;if(list==IntPtr.Zero)return;
-        var view=GetFolderView();var autoArrange=false;
-        if(view is not null) { try { autoArrange=view.GetAutoArrange()==0; }finally { Marshal.ReleaseComObject(view); } }
+        InstallDropProxy();
+        var autoArrange=(Native.GetWindowLongPtr(list,-16).ToInt64()&0x100)!=0; // LVS_AUTOARRANGE
         if(_configuredList!=list || autoArrange)
         {
             var iid=typeof(IFolderView2).GUID;
@@ -316,6 +339,14 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
         }
         else if(LiveBackground && Native.SendMessage(list,0x1000,IntPtr.Zero,IntPtr.Zero).ToInt64()!=DesktopHost.TransparentColorRef)
             UpdateBackground();
+    }
+
+    private void InstallDropProxy()
+    {
+        var list=ListHandle;
+        if(DropProxy is null || list==IntPtr.Zero || list==_proxyList)return;
+        Native.RevokeDragDrop(list);
+        Native.Check(Native.RegisterDragDrop(list,DropProxy));_proxyList=list;
     }
 
     public IDropTargetNative? GetDropTarget()
@@ -348,7 +379,7 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
             {
                 Native.Check(view.Item(i,out var pidl));var keep=false;
                 try {
-                    if(names.Contains(ItemName(view,pidl)) && view.GetItemPosition(pidl,out var position)>=0)
+                    if(names.Contains(CachedItemName(view,pidl)) && view.GetItemPosition(pidl,out var position)>=0)
                     { pidls.Add(pidl);positions.Add(position);keep=true; }
                 }
                 finally { if(!keep)Marshal.FreeCoTaskMem(pidl); }

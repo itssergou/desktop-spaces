@@ -10,6 +10,7 @@ internal sealed class DesktopInputSurface : Form,IDropTargetNative
     private System.Runtime.InteropServices.ComTypes.IDataObject? _data;
     private Guid? _targetId;
     private string[] _files=[];
+    public Func<System.Runtime.InteropServices.ComTypes.IDataObject,System.Runtime.InteropServices.ComTypes.IDataObject>? PrepareData { get; set; }
     public DesktopInputSurface(Func<ShellFolderView?> active)
     {
         _active=active;TopLevel=false;ShowInTaskbar=false;FormBorderStyle=FormBorderStyle.None;BackColor=Color.Black;
@@ -65,7 +66,7 @@ internal sealed class DesktopInputSurface : Form,IDropTargetNative
         return _target is not null;
     }
     int IDropTargetNative.DragEnter(System.Runtime.InteropServices.ComTypes.IDataObject data,uint keys,Native.Point point,ref uint effect)
-    { try { _data=data;_files=OleFiles.Read(data);EnsureTarget(keys,point,ref effect);return 0; }catch { effect=0;return 0; } }
+    { try { _data=PrepareData?.Invoke(data) ?? data;_files=OleFiles.Read(_data);EnsureTarget(keys,point,ref effect);return 0; }catch { effect=0;return 0; } }
     int IDropTargetNative.DragOver(uint keys,Native.Point point,ref uint effect)
     { try { return EnsureTarget(keys,point,ref effect) ? _target!.DragOver(keys,point,ref effect) : 0; }catch { effect=0;return 0; } }
     int IDropTargetNative.DragLeave() { ReleaseTarget();_data=null;_files=[];return 0; }
@@ -73,7 +74,7 @@ internal sealed class DesktopInputSurface : Form,IDropTargetNative
     {
         try {
             if((keys&8)==0 && _active()?.MoveIcons(_files,point)==true){effect=2;return 0;}
-            return EnsureTarget(keys,point,ref effect) ? _target!.Drop(data,keys,point,ref effect) : 0;
+            return EnsureTarget(keys,point,ref effect) ? _target!.Drop(_data ?? data,keys,point,ref effect) : 0;
         }
         catch { effect=0;return 0; }
         finally { ReleaseTarget(false);_data=null;_files=[]; }

@@ -34,6 +34,8 @@ internal static class Native
     [DllImport("ole32.dll")] internal static extern void OleUninitialize();
     [DllImport("ole32.dll")] internal static extern void ReleaseStgMedium(ref System.Runtime.InteropServices.ComTypes.STGMEDIUM medium);
     [DllImport("shell32.dll",CharSet=CharSet.Unicode)] internal static extern uint DragQueryFile(IntPtr drop,uint index,StringBuilder? name,uint length);
+    [DllImport("shell32.dll")] internal static extern uint ILGetSize(IntPtr pidl);
+    [DllImport("user32.dll")] internal static extern uint GetClipboardSequenceNumber();
     [DllImport("ole32.dll")] internal static extern int RegisterDragDrop(IntPtr hwnd, [MarshalAs(UnmanagedType.Interface)] IDropTargetNative target);
     [DllImport("ole32.dll")] internal static extern int RevokeDragDrop(IntPtr hwnd);
     [DllImport("user32.dll")] internal static extern bool ShowWindow(IntPtr hwnd,int command);
