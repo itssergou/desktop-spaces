@@ -12,12 +12,24 @@ public sealed class RecoveryRecord
     public List<string> OwnedPaths { get; set; } = [];
     public int ProcessId { get; set; }
     public long ProcessStartTicks { get; set; }
+    public bool RestoreDesktopIcons { get; set; }
 }
 
-public sealed class DesktopSession(IDesktopPath desktop, string journal)
+public sealed class DesktopSession(IDesktopPath desktop, string journal, Action<RecoveryRecord>? restoreSurface=null)
 {
     private RecoveryRecord? _record;
     private readonly object _sync=new();
+
+    public void RememberDesktopIcons(bool visible)
+    {
+        lock(_sync)
+        {
+            var record=_record ?? throw new InvalidOperationException("Сеанс не запущен.");
+            if(!visible || record.RestoreDesktopIcons)return;
+            record.RestoreDesktopIcons=true;
+            JsonStore.Write(journal,record);
+        }
+    }
 
     public void Start(string original, int processId, long processStartTicks)
     { lock(_sync) StartCore(original,processId,processStartTicks); }
@@ -76,11 +88,11 @@ public sealed class DesktopSession(IDesktopPath desktop, string journal)
     private void RestoreCore()
     {
         if (!File.Exists(journal)) { _record = null; return; }
-        Recover(desktop, journal);
+        Recover(desktop, journal,restoreSurface:restoreSurface);
         _record = null;
     }
 
-    public static bool Recover(IDesktopPath desktop, string journal, int? expectedProcessId=null, long? expectedStartTicks=null)
+    public static bool Recover(IDesktopPath desktop, string journal, int? expectedProcessId=null, long? expectedStartTicks=null, Action<RecoveryRecord>? restoreSurface=null)
     {
         // The watchdog and a newly launched app may recover the same journal together.
         // Serialize them and never let an old watchdog restore a newer session.
@@ -92,12 +104,12 @@ public sealed class DesktopSession(IDesktopPath desktop, string journal)
             try { acquired=mutex.WaitOne(TimeSpan.FromSeconds(5)); }
             catch(AbandonedMutexException) { acquired=true; }
             if(!acquired)throw new TimeoutException("Восстановление уже выполняется другим процессом.");
-            return RecoverCore(desktop,journal,expectedProcessId,expectedStartTicks);
+            return RecoverCore(desktop,journal,expectedProcessId,expectedStartTicks,restoreSurface);
         }
         finally { if(acquired)mutex.ReleaseMutex(); }
     }
 
-    private static bool RecoverCore(IDesktopPath desktop,string journal,int? expectedProcessId,long? expectedStartTicks)
+    private static bool RecoverCore(IDesktopPath desktop,string journal,int? expectedProcessId,long? expectedStartTicks,Action<RecoveryRecord>? restoreSurface)
     {
         if (!File.Exists(journal)) return false;
         var record = JsonStore.Read<RecoveryRecord>(journal);
@@ -110,6 +122,7 @@ public sealed class DesktopSession(IDesktopPath desktop, string journal)
             throw new InvalidOperationException("Рабочий стол изменён другой программой. Его путь не был перезаписан.");
         if (!Paths.Equal(current, record.OriginalPath)) desktop.Set(record.OriginalPath);
         if (!Paths.Equal(desktop.Get(), record.OriginalPath)) throw new IOException("Не удалось восстановить исходный рабочий стол.");
+        restoreSurface?.Invoke(record);
         File.Delete(journal);
         if (File.Exists(journal + ".bak")) File.Delete(journal + ".bak");
         return true;

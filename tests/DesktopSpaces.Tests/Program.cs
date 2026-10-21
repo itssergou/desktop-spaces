@@ -12,6 +12,10 @@ var tests=new (string Name,Action<Fixture> Run)[]
     ("Path prefix alone is not nesting",f=>{Assert(!Paths.Overlap(Path.Combine(f.Root,"A"),Path.Combine(f.Root,"AB")));}),
     ("Volume root overlaps every folder on that volume",f=>{Assert(Paths.Overlap(Path.GetPathRoot(f.Root)!,f.Original));}),
     ("Names are validated before creating folders",f=>{var c=f.Config();Throws<ArgumentException>(()=>c.AddSpace(" ",f.Storage));Assert(c.Spaces.Count==2);}),
+    ("Dragging order preserves identifiers folders and active space",f=>{var c=f.Config();var third=c.AddSpace("Work",f.Storage);var second=c.Spaces[1];c.ActiveSpaceId=third.Id;c.MoveSpace(third.Id,1);Assert(c.Spaces[1]==third && c.Spaces[2]==second && c.ActiveSpaceId==third.Id);c.Validate();}),
+    ("Original desktop cannot be reordered",f=>{var c=f.Config();var first=c.Spaces[0];c.MoveSpace(first.Id,1);c.MoveSpace(c.Spaces[1].Id,0);Assert(c.Spaces[0]==first);}),
+    ("Removing a space preserves every file",f=>{var c=f.Config();var space=c.AddSpace("Remove",f.Storage);var sample=Path.Combine(space.Folder,"keep.txt");File.WriteAllText(sample,"keep");c.RemoveSpace(space.Id);Assert(c.Spaces.All(s=>s.Id!=space.Id) && File.ReadAllText(sample)=="keep");c.Validate();}),
+    ("Removing original or active space is rejected",f=>{var c=f.Config();Throws<InvalidOperationException>(()=>c.RemoveSpace(c.Spaces[0].Id));c.ActiveSpaceId=c.Spaces[1].Id;Throws<InvalidOperationException>(()=>c.RemoveSpace(c.ActiveSpaceId));Assert(c.Spaces.Count==2);}),
     ("Relative folder paths rejected",f=>{var c=f.Config();c.Spaces[1].Folder="relative";Throws<InvalidDataException>(c.Validate);}),
     ("Null serialized entries fail validation",f=>{var c=f.Config();c.Spaces[0]=null!;Throws<InvalidDataException>(c.Validate);}),
     ("Unknown schema rejected",f=>{var c=f.Config();c.Version=99;Throws<InvalidDataException>(c.Validate);}),
@@ -35,6 +39,8 @@ var tests=new (string Name,Action<Fixture> Run)[]
     ("A second session cannot overwrite a live journal",f=>{var d=f.Desktop();f.Session(d);var s=new DesktopSession(d,f.Journal);Throws<InvalidOperationException>(()=>s.Start(f.Original,2,2));Assert(JsonStore.Read<RecoveryRecord>(f.Journal).ProcessId==1);}),
     ("All intermediate paths remain recoverable",f=>{var d=f.Desktop();var s=f.Session(d);s.Switch(f.Second);s.Switch(f.Third);d.Current=f.Second;DesktopSession.Recover(d,f.Journal);Assert(Paths.Equal(d.Current,f.Original));}),
     ("Restore removes both primary and backup journals",f=>{var d=f.Desktop();var s=f.Session(d);s.Switch(f.Second);Assert(File.Exists(f.Journal+".bak"));s.Restore();Assert(!File.Exists(f.Journal) && !File.Exists(f.Journal+".bak"));}),
+    ("Desktop icon visibility is journaled before hiding and recovered",f=>{var d=f.Desktop();var s=f.Session(d);s.RememberDesktopIcons(true);Assert(JsonStore.Read<RecoveryRecord>(f.Journal).RestoreDesktopIcons);var called=false;DesktopSession.Recover(d,f.Journal,restoreSurface:r=>{Assert(r.RestoreDesktopIcons && File.Exists(f.Journal));called=true;});Assert(called && !File.Exists(f.Journal));}),
+    ("Surface recovery failure retains the journal for retry",f=>{var d=f.Desktop();var s=f.Session(d);s.RememberDesktopIcons(true);Throws<IOException>(()=>DesktopSession.Recover(d,f.Journal,restoreSurface:_=>throw new IOException("surface")));Assert(File.Exists(f.Journal));Assert(DesktopSession.Recover(d,f.Journal));}),
     ("Old watchdog cannot restore a newer session",f=>{var d=f.Desktop();var s=f.Session(d);s.Switch(f.Second);Assert(!DesktopSession.Recover(d,f.Journal,99,99));Assert(Paths.Equal(d.Current,f.Second) && File.Exists(f.Journal));}),
     ("PID reuse with a different start time does not restore",f=>{var d=f.Desktop();var s=f.Session(d);s.Switch(f.Second);Assert(!DesktopSession.Recover(d,f.Journal,1,2));Assert(Paths.Equal(d.Current,f.Second));Assert(DesktopSession.Recover(d,f.Journal,1,1));})
 };

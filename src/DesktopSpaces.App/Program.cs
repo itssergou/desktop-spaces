@@ -5,12 +5,22 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        Native.Check(Native.OleInitialize(IntPtr.Zero));
+        try { Run(args); }
+        finally { Native.OleUninitialize(); }
+    }
+
+    private static void Run(string[] args)
+    {
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
         if(args.Length==2 && args[0]=="--read-desktop") { File.WriteAllText(args[1],new WindowsDesktopPath().Get());return; }
+        if(args.Length==2 && args[0]=="--read-surface") { JsonStore.Write(args[1],new { IconsVisible=Native.IsWindowVisible(Native.DesktopList()),HitTesting=DesktopDiagnostics.CheckHitTesting() });return; }
         if(args.Length==2 && args[0]=="--watchdog") { Watchdog.Run(args[1]); return; }
         if(args.Contains("--probe")) { RunProbe(args); return; }
+        if(args.Contains("--surface-probe")) { SurfaceProbe.Run(args);return; }
+        if(args.Contains("--startup-probe")) { StartupProbe.Run(args);return; }
         var demo=args.Contains("--demo");
         using var mutex=new System.Threading.Mutex(true,"Local\\DesktopSpaces"+(demo?".Demo":""),out var ownsMutex);
         if(!ownsMutex)
@@ -30,7 +40,7 @@ internal static class Program
             if(args.Contains("--recover"))
             {
                 var journal=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DesktopSpaces","recovery.json");
-                DesktopSession.Recover(new WindowsDesktopPath(),journal);return;
+                DesktopSession.Recover(new WindowsDesktopPath(),journal,restoreSurface:Native.RestoreDesktopIcons);return;
             }
             using var context=new DesktopApplication(demo);
             Application.Run(context);

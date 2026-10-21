@@ -67,6 +67,23 @@ public sealed class AppConfig
         Spaces.Add(space);
         return space;
     }
+
+    public void MoveSpace(Guid id,int destination)
+    {
+        var index=Spaces.FindIndex(s=>s.Id==id);
+        if(index<0)throw new ArgumentException("Пространство больше не существует.");
+        if(index==0 || destination<=0 || destination>=Spaces.Count)return;
+        var space=Spaces[index];Spaces.RemoveAt(index);Spaces.Insert(destination,space);
+    }
+
+    public Space RemoveSpace(Guid id)
+    {
+        var index=Spaces.FindIndex(s=>s.Id==id);
+        if(index<=0)throw new InvalidOperationException("Первый рабочий стол нельзя удалить.");
+        if(ActiveSpaceId==id)throw new InvalidOperationException("Сначала перейдите в другое пространство.");
+        var space=Spaces[index];Spaces.RemoveAt(index);
+        return space; // The folder and its contents always remain recoverable.
+    }
 }
 
 public static class Paths

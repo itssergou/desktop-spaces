@@ -18,7 +18,7 @@ internal static class Watchdog
                 }
             }
             catch(ArgumentException) { }
-            DesktopSession.Recover(new WindowsDesktopPath(),journal,record.ProcessId,record.ProcessStartTicks);
+            DesktopSession.Recover(new WindowsDesktopPath(),journal,record.ProcessId,record.ProcessStartTicks,Native.RestoreDesktopIcons);
         }
         catch(Exception ex) { DesktopApplication.Log(Path.GetDirectoryName(journal)!,ex); }
     }

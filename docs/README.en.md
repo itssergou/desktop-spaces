@@ -4,7 +4,7 @@ An MIT-licensed Windows tray utility with independent desktop spaces for
 shortcuts, files and folders. The first space is the original Windows desktop;
 additional spaces use native Windows Shell folder views.
 
-This is a **0.1.0 preview**, not a fully validated Windows shell replacement.
+This is a **0.1.1 preview**, not a fully validated Windows shell replacement.
 Double-click empty desktop space to cycle, or use Alt + 1–9. Settings offer
 Ctrl + Alt as an alternative, space management, an indicator and opt-in startup.
 Exit from the tray to restore the original desktop path.

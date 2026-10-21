@@ -7,7 +7,10 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
     dotnet run --project tests/DesktopSpaces.Tests -c Release --no-build
     if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
+    dotnet run --project tests/DesktopSpaces.Windows.Tests -c Release --no-build
+    if ($LASTEXITCODE -ne 0) { throw 'Windows regression tests failed.' }
     & "$PSScriptRoot\Test-Shell.ps1"
+    & "$PSScriptRoot\Test-Surface.ps1"
     $publishDirectory = Join-Path $publishRoot "artifacts\DesktopSpaces-$Runtime"
     dotnet publish src/DesktopSpaces.App/DesktopSpaces.App.csproj -c Release -r $Runtime --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishTrimmed=false -p:DebugSymbols=false -p:DebugType=None -o $publishDirectory
     if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }
@@ -31,7 +34,9 @@ try {
     }
     # Explicitly select release inputs: previous PDBs and diagnostics are not distributed.
     $publishInputs = @((Join-Path $publishDirectory 'DesktopSpaces.exe'),(Join-Path $publishDirectory 'LICENSE'),(Join-Path $publishDirectory 'README.md'),(Join-Path $publishDirectory 'CONTRIBUTING.md'),(Join-Path $publishDirectory 'PLAN.md'),$publishDocs,$noticeDirectory)
-    $publishArchive = Join-Path $publishRoot "artifacts\DesktopSpaces-0.1.0-$Runtime.zip"
+    [xml]$publishProject = Get-Content (Join-Path $publishRoot 'src\DesktopSpaces.App\DesktopSpaces.App.csproj') -Raw
+    $releaseVersion = $publishProject.Project.PropertyGroup.Version
+    $publishArchive = Join-Path $publishRoot "artifacts\DesktopSpaces-$releaseVersion-$Runtime.zip"
     Compress-Archive -Path $publishInputs -DestinationPath $publishArchive -Force
     $publishHash = Get-FileHash -LiteralPath $publishArchive -Algorithm SHA256
     ($publishHash.Hash.ToLowerInvariant() + '  ' + [IO.Path]::GetFileName($publishArchive)) | Set-Content -LiteralPath ($publishArchive + '.sha256') -Encoding ASCII

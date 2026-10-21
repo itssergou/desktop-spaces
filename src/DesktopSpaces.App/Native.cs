@@ -30,6 +30,16 @@ internal static class Native
     [DllImport("user32.dll")] internal static extern IntPtr GetParent(IntPtr hwnd);
     [DllImport("user32.dll")] internal static extern bool IsWindow(IntPtr hwnd);
     [DllImport("user32.dll")] internal static extern bool IsWindowVisible(IntPtr hwnd);
+    [DllImport("ole32.dll")] internal static extern int OleInitialize(IntPtr reserved);
+    [DllImport("ole32.dll")] internal static extern void OleUninitialize();
+    [DllImport("ole32.dll")] internal static extern void ReleaseStgMedium(ref System.Runtime.InteropServices.ComTypes.STGMEDIUM medium);
+    [DllImport("shell32.dll",CharSet=CharSet.Unicode)] internal static extern uint DragQueryFile(IntPtr drop,uint index,StringBuilder? name,uint length);
+    [DllImport("ole32.dll")] internal static extern int RegisterDragDrop(IntPtr hwnd, [MarshalAs(UnmanagedType.Interface)] IDropTargetNative target);
+    [DllImport("ole32.dll")] internal static extern int RevokeDragDrop(IntPtr hwnd);
+    [DllImport("user32.dll")] internal static extern bool ShowWindow(IntPtr hwnd,int command);
+    [DllImport("user32.dll")] internal static extern bool SetLayeredWindowAttributes(IntPtr hwnd,uint color,byte alpha,uint flags);
+    [DllImport("oleacc.dll")] internal static extern int AccessibleObjectFromWindow(IntPtr hwnd,uint objectId,ref Guid iid,[MarshalAs(UnmanagedType.Interface)]out object accessible);
+    [DllImport("user32.dll")] internal static extern int MapWindowPoints(IntPtr from,IntPtr to,ref Point point,uint count);
     [DllImport("user32.dll")] internal static extern bool IsChild(IntPtr parent, IntPtr child);
     [DllImport("user32.dll")] internal static extern bool GetClientRect(IntPtr hwnd, out Rect rect);
     [DllImport("user32.dll")] internal static extern bool GetWindowRect(IntPtr hwnd, out Rect rect);
@@ -62,6 +72,11 @@ internal static class Native
 
     internal static string ClassName(IntPtr hwnd) { var s=new StringBuilder(256); GetClassName(hwnd,s,s.Capacity); return s.ToString(); }
     internal static void Check(int hr) { if (hr < 0) Marshal.ThrowExceptionForHR(hr); }
+    internal static IntPtr DesktopList() => FindWindowEx(FindDesktopView(),IntPtr.Zero,"SysListView32",null);
+    internal static void RestoreDesktopIcons(RecoveryRecord record)
+    {
+        if(record.RestoreDesktopIcons) { var list=DesktopList();if(list!=IntPtr.Zero)ShowWindow(list,5); }
+    }
     internal static IntPtr FindDesktopView()
     {
         var found=IntPtr.Zero;
@@ -185,4 +200,41 @@ internal interface IDesktopWallpaper
     [PreserveSig] int GetBackgroundColor(out uint color);
     [PreserveSig] int SetPosition(uint position);
     [PreserveSig] int GetPosition(out uint position);
+}
+
+[ComVisible(true), Guid("00000122-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IDropTargetNative
+{
+    [PreserveSig] int DragEnter([MarshalAs(UnmanagedType.Interface)]System.Runtime.InteropServices.ComTypes.IDataObject data,uint keys,Native.Point point,ref uint effect);
+    [PreserveSig] int DragOver(uint keys,Native.Point point,ref uint effect);
+    [PreserveSig] int DragLeave();
+    [PreserveSig] int Drop([MarshalAs(UnmanagedType.Interface)]System.Runtime.InteropServices.ComTypes.IDataObject data,uint keys,Native.Point point,ref uint effect);
+}
+
+[ComImport,Guid("1AF3A467-214F-4298-908E-06B03E0B39F9"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IFolderView2
+{
+    [PreserveSig] int GetCurrentViewMode(out uint mode);
+    [PreserveSig] int SetCurrentViewMode(uint mode);
+    [PreserveSig] int GetFolder(ref Guid iid,[MarshalAs(UnmanagedType.Interface)]out object folder);
+    [PreserveSig] int Item(int index,out IntPtr pidl);
+    [PreserveSig] int ItemCount(uint flags,out int count);
+    [PreserveSig] int Items(uint flags,ref Guid iid,[MarshalAs(UnmanagedType.Interface)]out object items);
+    [PreserveSig] int GetSelectionMarkedItem(out int index);
+    [PreserveSig] int GetFocusedItem(out int index);
+    [PreserveSig] int GetItemPosition(IntPtr pidl,out Native.Point point);
+    [PreserveSig] int GetSpacing(out Native.Point point);
+    [PreserveSig] int GetDefaultSpacing(out Native.Point point);
+    [PreserveSig] int GetAutoArrange();
+    [PreserveSig] int SelectItem(int index,uint flags);
+    [PreserveSig] int SelectAndPositionItems(uint count,IntPtr pidls,IntPtr points,uint flags);
+    [PreserveSig] int SetGroupBy(IntPtr key,[MarshalAs(UnmanagedType.Bool)]bool ascending);
+    [PreserveSig] int GetGroupBy(IntPtr key,out bool ascending);
+    [PreserveSig] int SetViewProperty(IntPtr pidl,IntPtr key,IntPtr value);
+    [PreserveSig] int GetViewProperty(IntPtr pidl,IntPtr key,IntPtr value);
+    [PreserveSig] int SetTileViewProperties(IntPtr pidl,[MarshalAs(UnmanagedType.LPWStr)]string properties);
+    [PreserveSig] int SetExtendedTileViewProperties(IntPtr pidl,[MarshalAs(UnmanagedType.LPWStr)]string properties);
+    [PreserveSig] int SetText(uint type,[MarshalAs(UnmanagedType.LPWStr)]string text);
+    [PreserveSig] int SetCurrentFolderFlags(uint mask,uint flags);
+    [PreserveSig] int GetCurrentFolderFlags(out uint flags);
 }

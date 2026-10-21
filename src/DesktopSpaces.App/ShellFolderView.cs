@@ -6,12 +6,23 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
     private IExplorerBrowser? _browser;
     private uint _cookie;
     private bool _ready;
+    private IntPtr _configuredList;
     private readonly Space _space;
     private readonly Action<Exception> _error;
     public event Action? Ready;
     public Space Space => _space;
     public bool IsReady => _ready;
     public Func<Bitmap>? BackgroundFactory { get; set; }
+    public bool LiveBackground { get; set; }
+    public IntPtr ListHandle
+    {
+        get
+        {
+            var list=IntPtr.Zero;
+            if(IsHandleCreated)Native.EnumChildWindows(Handle,(h,_)=>{if(Native.ClassName(h)=="SysListView32"){list=h;return false;}return true;},IntPtr.Zero);
+            return list;
+        }
+    }
 
     public ShellFolderView(Space space, Action<Exception> error)
     {
@@ -27,11 +38,11 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
         try
         {
             _browser=(IExplorerBrowser)Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid("71F96385-DDD6-48D3-A0C1-AE06E8B055FB"),true)!)!;
-            Native.Check(_browser.SetOptions(0x4 | 0x8)); // no travel log, no border
+            Native.Check(_browser.SetOptions(0x1 | 0x8 | 0x40 | 0x80)); // navigate once, no travel log/border/persisted browser state
             Native.Check(_browser.SetPropertyBag("DesktopSpaces."+_space.Id.ToString("N")));
             Native.Check(Native.IUnknown_SetSite(_browser,this));
             var rect=new Native.Rect(ClientRectangle);
-            var settings=new Native.FolderSettings { ViewMode=1, Flags=0x20 | 0x100 | 0x800 | 0x100000 | 0x10000000 };
+            var settings=new Native.FolderSettings { ViewMode=1, Flags=0x20 | 0x4 | 0x800 | 0x100000 | 0x10000000 };
             Native.Check(_browser.Initialize(Handle,ref rect,ref settings));
             Native.Check(_browser.Advise(this,out _cookie));
             Native.Check(_browser.SetEmptyText("Дважды нажмите по пустому месту, чтобы сменить пространство"));
@@ -79,6 +90,7 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
 
     public void SaveLayout()
     {
+        MaintainView();
         var view=GetFolderView(); if(view is null)return;
         try
         {
@@ -142,6 +154,20 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
                 var hit=new Native.HitTest { Point=p };
                 return Native.SendMessage(list,0x1012,IntPtr.Zero,ref hit).ToInt64()<0;
             }
+            // MSAA crosses process boundaries safely and reports CHILDID_SELF (0)
+            // for the real desktop background. UIA's ControlView can skip DefView.
+            object? accessible=null;
+            try
+            {
+                var iid=new Guid("618736E0-3C3D-11CF-810C-00AA00389B71");
+                if(Native.AccessibleObjectFromWindow(list,0xFFFFFFFC,ref iid,out accessible)>=0)
+                {
+                    var hit=((Accessibility.IAccessible)accessible).accHitTest(screenPoint.X,screenPoint.Y);
+                    return hit is null || hit is int child && child==0;
+                }
+            }
+            catch(COMException) { }
+            finally { if(accessible is not null && Marshal.IsComObject(accessible))Marshal.ReleaseComObject(accessible); }
         }
         try
         {
@@ -166,8 +192,18 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
     public int OnNavigationFailed(IntPtr pidl) { _error(new IOException("Windows не смогла открыть папку пространства.")); return 0; }
     public int OnNavigationComplete(IntPtr pidl)
     {
-        _ready=true;
-        BeginInvoke((Action)(() => { try { UpdateBackground();RestoreLayout();Ready?.Invoke(); } catch(Exception ex) { _error(ex); } }));
+        BeginInvoke((Action)(() => {
+            if(IsDisposed)return;
+            try {
+                var iid=typeof(IFolderView2).GUID;
+                if(_browser!.GetCurrentView(ref iid,out var obj)>=0)
+                {
+                    try { Native.Check(((IFolderView2)obj).SetCurrentFolderFlags(1,0)); }
+                    finally { Marshal.ReleaseComObject(obj); }
+                }
+                _ready=true;UpdateBackground();RestoreLayout();Ready?.Invoke();Ready=null;
+            } catch(Exception ex) { _error(ex); }
+        }));
         return 0;
     }
     public int OnStateChange(IntPtr view,uint change) => 0;
@@ -242,14 +278,92 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
 
     public void UpdateBackground()
     {
-        if(!_ready || BackgroundFactory is null)return;
-        var list=IntPtr.Zero;
-        Native.EnumChildWindows(Handle,(h,_)=>{if(Native.ClassName(h)=="SysListView32"){list=h;return false;}return true;},IntPtr.Zero);
+        if(!_ready)return;
+        var list=ListHandle;
         if(list==IntPtr.Zero)return;
+        _configuredList=list;
+        if(LiveBackground)
+        {
+            BackColor=DesktopHost.TransparentColor;
+            var clear=new Native.BackgroundImage();
+            Native.SendMessage(list,0x108A,IntPtr.Zero,ref clear);
+            Native.SendMessage(list,0x1001,IntPtr.Zero,new IntPtr(DesktopHost.TransparentColorRef));
+            Native.SendMessage(list,0x1026,IntPtr.Zero,new IntPtr(-1));
+            return;
+        }
+        if(BackgroundFactory is null)return;
         using var image=BackgroundFactory();
         var native=new Native.BackgroundImage { Flags=1,Bitmap=image.GetHbitmap() };
         if(Native.SendMessage(list,0x108A,IntPtr.Zero,ref native)==IntPtr.Zero)Native.DeleteObject(native.Bitmap);
         Native.SendMessage(list,0x1026,IntPtr.Zero,new IntPtr(-1)); // transparent label background
+    }
+
+    public void MaintainView()
+    {
+        if(!_ready || IsDisposed)return;
+        var list=ListHandle;if(list==IntPtr.Zero)return;
+        var view=GetFolderView();var autoArrange=false;
+        if(view is not null) { try { autoArrange=view.GetAutoArrange()==0; }finally { Marshal.ReleaseComObject(view); } }
+        if(_configuredList!=list || autoArrange)
+        {
+            var iid=typeof(IFolderView2).GUID;
+            if(_browser!.GetCurrentView(ref iid,out var obj)>=0)
+            {
+                try { Native.Check(((IFolderView2)obj).SetCurrentFolderFlags(1,0)); }
+                finally { Marshal.ReleaseComObject(obj); }
+            }
+            UpdateBackground();RestoreLayout();
+        }
+        else if(LiveBackground && Native.SendMessage(list,0x1000,IntPtr.Zero,IntPtr.Zero).ToInt64()!=DesktopHost.TransparentColorRef)
+            UpdateBackground();
+    }
+
+    public IDropTargetNative? GetDropTarget()
+    {
+        if(_browser is null || !_ready)return null;
+        var iid=typeof(IDropTargetNative).GUID;
+        if(_browser.GetCurrentView(ref iid,out var direct)>=0)return (IDropTargetNative)direct;
+        iid=typeof(IShellView).GUID;
+        if(_browser.GetCurrentView(ref iid,out var obj)<0)return null;
+        try
+        {
+            iid=typeof(IDropTargetNative).GUID;
+            return ((IShellView)obj).GetItemObject(0,ref iid,out var target)>=0 ? (IDropTargetNative)target : null;
+        }
+        finally { Marshal.ReleaseComObject(obj); }
+    }
+
+    public bool ContainsFiles(string[] files)=>files.Length>0 && files.All(path=>Paths.Equal(Path.GetDirectoryName(path)!,_space.Folder));
+
+    public bool MoveIcons(string[] files,Native.Point screenPoint)
+    {
+        if(!ContainsFiles(files))return false;
+        var view=GetFolderView();if(view is null)return false;
+        var pidls=new List<IntPtr>();var positions=new List<Native.Point>();
+        var names=files.Select(Path.GetFileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            Native.Check(view.ItemCount(2,out var count));
+            for(var i=0;i<count;i++)
+            {
+                Native.Check(view.Item(i,out var pidl));var keep=false;
+                try {
+                    if(names.Contains(ItemName(view,pidl)) && view.GetItemPosition(pidl,out var position)>=0)
+                    { pidls.Add(pidl);positions.Add(position);keep=true; }
+                }
+                finally { if(!keep)Marshal.FreeCoTaskMem(pidl); }
+            }
+            if(pidls.Count!=names.Count)return false;
+            Native.ScreenToClient(ListHandle,ref screenPoint);
+            view.GetSpacing(out var spacing);
+            var x=13+Math.Max(0,(int)Math.Round((screenPoint.X-40-13)/(double)Math.Max(1,spacing.X)))*Math.Max(1,spacing.X);
+            var y=2+Math.Max(0,(int)Math.Round((screenPoint.Y-24-2)/(double)Math.Max(1,spacing.Y)))*Math.Max(1,spacing.Y);
+            var origin=positions[0];
+            var points=positions.Select(p=>new Native.Point(x+p.X-origin.X,y+p.Y-origin.Y)).ToArray();
+            Native.Check(view.SelectAndPositionItems((uint)pidls.Count,pidls.ToArray(),points,0x80|1|4));
+            SaveLayout();return true;
+        }
+        finally { foreach(var pidl in pidls)Marshal.FreeCoTaskMem(pidl);Marshal.ReleaseComObject(view); }
     }
 
     public void FocusView()

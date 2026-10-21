@@ -6,8 +6,11 @@ public static class JsonStore
 {
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
-    public static T Read<T>(string path) where T : class =>
-        JsonSerializer.Deserialize<T>(File.ReadAllBytes(path), Options) ?? throw new InvalidDataException("Пустой файл настроек.");
+    public static T Read<T>(string path) where T : class
+    {
+        using var stream=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.ReadWrite|FileShare.Delete);
+        return JsonSerializer.Deserialize<T>(stream, Options) ?? throw new InvalidDataException("Пустой файл настроек.");
+    }
 
     public static void Write<T>(string path, T value)
     {

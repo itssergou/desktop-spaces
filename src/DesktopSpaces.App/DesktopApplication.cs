@@ -13,11 +13,15 @@ internal sealed class DesktopApplication : ApplicationContext
     private readonly Icon _trayIcon;
     private readonly System.Windows.Forms.Timer _health=new() { Interval=1500 };
     private readonly System.Windows.Forms.Timer _saveTimer=new() { Interval=15000 };
+    private readonly System.Windows.Forms.Timer _deferredSave=new() { Interval=600 };
     private DesktopHost _host=null!;
     private InputHooks? _hooks;
     private SettingsForm? _settings;
     private bool _switching,_stopping;
     private Guid _active;
+    private int? _pendingSwitch;
+    private long _lastSwitchMilliseconds;
+    private bool _registeredAutoStart;
     private readonly CommandWindow _commands;
 
     public DesktopApplication(bool demo)
@@ -37,16 +41,19 @@ internal sealed class DesktopApplication : ApplicationContext
             _desktop=new DemoDesktopPath(first);
         }
         else _desktop=new WindowsDesktopPath();
-        DesktopSession.Recover(_desktop,_journal);
+        DesktopSession.Recover(_desktop,_journal,restoreSurface:demo?null:Native.RestoreDesktopIcons);
         if(!demo)CheckDesktopCompatibility(_desktop.Get());
         _config=File.Exists(_configPath) || File.Exists(_configPath+".bak") ? JsonStore.LoadConfig(_configPath) : AppConfig.Create(_desktop.Get(),_spacesRoot);
+        if(!demo)_config.Preferences.AutoStart=StartupRegistration.IsEnabled();
+        if(!demo && _config.Preferences.AutoStart)StartupRegistration.SetEnabled(true);
+        _registeredAutoStart=_config.Preferences.AutoStart;
         foreach(var space in _config.Spaces)
         {
             if(space==_config.Spaces[0] && !Directory.Exists(space.Folder))throw new DirectoryNotFoundException("Исходный рабочий стол недоступен.");
             Directory.CreateDirectory(space.Folder);
         }
         SaveConfig();
-        _session=new DesktopSession(_desktop,_journal);
+        _session=new DesktopSession(_desktop,_journal,demo?null:Native.RestoreDesktopIcons);
         using var process=Process.GetCurrentProcess();
         _session.Start(_config.OriginalDesktop,process.Id,process.StartTime.ToUniversalTime().Ticks);
         using(var iconStream=typeof(DesktopApplication).Assembly.GetManifestResourceStream("DesktopSpaces.Icon")!)
@@ -62,6 +69,7 @@ internal sealed class DesktopApplication : ApplicationContext
             CreateHost();
             _health.Tick+=(_,_)=>CheckHealth();_health.Start();
             _saveTimer.Tick+=(_,_)=> { try { _host.SaveLayouts();SaveConfig(); } catch(Exception ex){Report(ex);} };_saveTimer.Start();
+            _deferredSave.Tick+=(_,_)=> { _deferredSave.Stop();try{_host.SaveLayouts();SaveConfig();}catch(Exception ex){Report(ex);} };
             Application.ThreadException+=OnThreadException;
             SystemEvents.DisplaySettingsChanged+=OnDisplayChanged;
             SystemEvents.SessionEnding+=OnSessionEnding;
@@ -74,7 +82,7 @@ internal sealed class DesktopApplication : ApplicationContext
 
     private void CreateHost()
     {
-        _host=new DesktopHost(_demo);
+        _host=new DesktopHost(_demo,_session.RememberDesktopIcons);
         _host.FormClosing+=(_,e)=> { if(!_stopping){e.Cancel=true;Stop();} };
         _host.Attach();
         _hooks=new InputHooks(_host,_config.Preferences,Switch,()=>Switch((_config.Spaces.FindIndex(s=>s.Id==_active)+1)%_config.Spaces.Count));
@@ -83,36 +91,44 @@ internal sealed class DesktopApplication : ApplicationContext
 
     public void Switch(int index)
     {
-        if(_stopping || _switching || index<0 || index>=_config.Spaces.Count)return;
+        if(_stopping || index<0 || index>=_config.Spaces.Count)return;
+        if(_switching){_pendingSwitch=index;return;}
         var space=_config.Spaces[index];
         if(_active==space.Id && (_host.ActiveView is not null || _host.NativeDesktopActive))return;
         _switching=true;
+        var elapsed=Stopwatch.StartNew();
         try
         {
-            _host.ActiveView?.SaveLayout();
             if(!_demo && index==0)
             {
                 _session.Switch(space.Folder);
-                _host.ActivateNativeDesktop(space.Id);
+                _host.ActivateNativeDesktop(space.Id,$"1  ·  {space.Name}",_config.Preferences.ShowIndicator);
                 _active=_config.ActiveSpaceId=space.Id;
-                SaveConfig();BuildMenu();_tray.Text="DesktopSpaces · "+space.Name[..Math.Min(space.Name.Length,45)];
-                _switching=false;return;
+                BuildMenu();_tray.Text="DesktopSpaces · "+space.Name[..Math.Min(space.Name.Length,45)];
+                _lastSwitchMilliseconds=elapsed.ElapsedMilliseconds;FinishSwitch();return;
             }
-            _host.Prepare(space,ex=>{_switching=false;Report(ex);},()=> {
+            _host.Prepare(space,ex=>{FinishSwitch();Report(ex);},()=> {
                 if(_stopping)return;
                 try
                 {
                     _session.Switch(space.Folder);
                     _host.ActivateSpace(space.Id,$"{index+1}  ·  {space.Name}",_config.Preferences.ShowIndicator);
                     _active=_config.ActiveSpaceId=space.Id;
-                    SaveConfig();BuildMenu();
+                    BuildMenu();
                     _tray.Text=("DesktopSpaces · "+space.Name)[..Math.Min(63,("DesktopSpaces · "+space.Name).Length)];
                 }
                 catch(Exception ex){Report(ex);}
-                finally{_switching=false;}
+                finally{_lastSwitchMilliseconds=elapsed.ElapsedMilliseconds;FinishSwitch();}
             });
         }
-        catch(Exception ex){_switching=false;Report(ex);}
+        catch(Exception ex){FinishSwitch();Report(ex);}
+    }
+
+    private void FinishSwitch()
+    {
+        if(_stopping)return;
+        _switching=false;_deferredSave.Stop();_deferredSave.Start();
+        if(_pendingSwitch is int index) { _pendingSwitch=null;_host.BeginInvoke((Action)(()=>Switch(index))); }
     }
 
     private void BuildMenu()
@@ -144,32 +160,32 @@ internal sealed class DesktopApplication : ApplicationContext
     {
         if(id==_config.Spaces[0].Id)throw new InvalidOperationException("Первое пространство нельзя исключить.");
         if(_switching)throw new InvalidOperationException("Дождитесь завершения переключения.");
-        if(_active==id)throw new InvalidOperationException("Сначала переключитесь на другое пространство.");
-        var space=_config.Spaces.Single(s=>s.Id==id);
-        _host.Forget(id);_config.Spaces.Remove(space);SaveConfig();BuildMenu();
-        OpenFolder(space.Folder);
+        if(_active==id)Switch(0);
+        if(_active==id)throw new InvalidOperationException("Дождитесь перехода на первый рабочий стол и повторите удаление.");
+        var index=_config.Spaces.FindIndex(s=>s.Id==id);
+        var space=_config.RemoveSpace(id);
+        try { SaveConfig(); }catch { _config.Spaces.Insert(index,space);throw; }
+        _host.Forget(id);BuildMenu();
     }
-    private void MoveSpace(Guid id,int offset)
+    private void MoveSpace(Guid id,int destination)
     {
-        var index=_config.Spaces.FindIndex(s=>s.Id==id);var next=index+offset;
-        if(index<=0 || next<=0 || next>=_config.Spaces.Count)return;
-        (_config.Spaces[index],_config.Spaces[next])=(_config.Spaces[next],_config.Spaces[index]);SaveConfig();BuildMenu();
+        var previous=_config.Spaces.ToList();_config.MoveSpace(id,destination);
+        try { SaveConfig(); }catch { _config.Spaces=previous;throw; }BuildMenu();
     }
     private void SavePreferences()
     {
-        if(!_demo)
-        {
-            using var key=Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
-            if(_config.Preferences.AutoStart)key.SetValue("DesktopSpaces",'"'+Environment.ProcessPath+'"'+" --autostart");
-            else key.DeleteValue("DesktopSpaces",false);
-        }
-        SaveConfig();BuildMenu();
+        var changed=!_demo && _registeredAutoStart!=_config.Preferences.AutoStart;
+        if(changed)StartupRegistration.SetEnabled(_config.Preferences.AutoStart);
+        try { SaveConfig(); }
+        catch { if(changed)StartupRegistration.SetEnabled(_registeredAutoStart);throw; }
+        _registeredAutoStart=_config.Preferences.AutoStart;BuildMenu();
         var conflicts=_hooks?.RefreshConflicts();
         if(conflicts?.Count>0)_tray.ShowBalloonTip(5000,"Сочетание занято","Не используются номера: "+string.Join(", ",conflicts)+". Выберите другой модификатор в настройках.",ToolTipIcon.Warning);
     }
     private void SaveConfig() { _config.Validate();JsonStore.Write(_configPath,_config); }
     private void WriteStatus()
     {
+        if(_stopping || _host.IsDisposed)return;
         try
         {
             JsonStore.Write(Path.Combine(_root,"status.json"),new {
@@ -178,6 +194,9 @@ internal sealed class DesktopApplication : ApplicationContext
                 NativeDesktopActive=_host.NativeDesktopActive,
                 SurfaceVisible=Native.IsWindowVisible(_host.Handle),
                 FolderViewReady=_host.ActiveView?.IsReady==true,
+                LastSwitchMilliseconds=_lastSwitchMilliseconds,
+                NativeIconsVisible=Native.IsWindowVisible(Native.DesktopList()),
+                NativeHitTesting=_host.NativeDesktopActive && !_demo?DesktopDiagnostics.CheckHitTesting():null,
                 MonitorCount=Screen.AllScreens.Length
             });
         }
@@ -213,6 +232,14 @@ internal sealed class DesktopApplication : ApplicationContext
     {
         if(_stopping)return;
         try { if(!_host.IsDisposed)_host.MaintainViews(); }catch(Exception ex){Report(ex);}
+        if(!_switching && !_host.IsDisposed && (_demo || Native.IsWindow(_host.DesktopParent)))
+            try
+            {
+                // Preload one nearby space at a time while the desktop is idle.
+                var nearby=_config.Spaces.Take(9).FirstOrDefault(s=>(_demo || s!=_config.Spaces[0]) && !_host.IsPrepared(s.Id));
+                if(nearby is not null)_host.Prepare(nearby,Report,()=>{});
+            }
+            catch(Exception ex) { Report(ex); }
         if(_demo)return;
         if(!_host.IsDisposed && Native.IsWindow(_host.DesktopParent) && Native.IsWindow(_host.Handle)){_host.FitDesktop();return;}
         if(Native.FindDesktopView()==IntPtr.Zero)return;
@@ -251,7 +278,7 @@ internal sealed class DesktopApplication : ApplicationContext
     private void Stop()
     {
         if(_stopping)return;_stopping=true;
-        _health.Stop();_saveTimer.Stop();_hooks?.Dispose();
+        _health.Stop();_saveTimer.Stop();_deferredSave.Stop();_hooks?.Dispose();
         try { _host.SaveLayouts(); }catch(Exception ex){Log(_root,ex);}
         try { _session.Restore(); }
         catch(Exception ex)
@@ -263,6 +290,6 @@ internal sealed class DesktopApplication : ApplicationContext
         try{SaveConfig();}catch(Exception ex){Log(_root,ex);}
         _settings?.Dispose();_host.Dispose();_tray.Visible=false;_tray.Dispose();_trayIcon.Dispose();
         Application.ThreadException-=OnThreadException;SystemEvents.DisplaySettingsChanged-=OnDisplayChanged;SystemEvents.SessionEnding-=OnSessionEnding;SystemEvents.UserPreferenceChanged-=OnPreferenceChanged;
-        _commands.Dispose();_health.Dispose();_saveTimer.Dispose();ExitThread();
+        _commands.Dispose();_health.Dispose();_saveTimer.Dispose();_deferredSave.Dispose();ExitThread();
     }
 }
