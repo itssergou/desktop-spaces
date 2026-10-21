@@ -1,0 +1,28 @@
+name: Preview release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  publish:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 8.0.x
+      - name: Build and validate
+        shell: pwsh
+        run: ./scripts/Publish.ps1
+      - name: Publish preview assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $releaseAssets = (Get-ChildItem -LiteralPath artifacts -File | Where-Object Name -Match '\.(zip|sha256)$').FullName
+          gh release create "$env:RELEASE_TAG" @releaseAssets --repo "$env:GITHUB_REPOSITORY" --title "DesktopSpaces $env:RELEASE_TAG" --notes-file docs/RELEASE_NOTES.md --prerelease --verify-tag

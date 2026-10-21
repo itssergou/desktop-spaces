@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>DesktopSpaces</AssemblyName>
+    <Version>0.1.0</Version>
+    <ApplicationIcon>../../assets/DesktopSpaces.ico</ApplicationIcon>
+    <Company>DesktopSpaces contributors</Company>
+    <Description>Independent desktop spaces for Windows</Description>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="../DesktopSpaces.Core/DesktopSpaces.Core.csproj" /></ItemGroup>
+  <ItemGroup><EmbeddedResource Include="../../assets/DesktopSpaces.ico" LogicalName="DesktopSpaces.Icon" /></ItemGroup>
+</Project>
