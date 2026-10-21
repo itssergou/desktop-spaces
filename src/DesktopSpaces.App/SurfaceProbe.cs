@@ -5,7 +5,7 @@ internal static class SurfaceProbe
     public static void Run(string[] args)
     {
         var root=Program.DiagnosticRoot("surface",args);
-        if(args.Contains("--redirect-during-drop") && File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DesktopSpaces","recovery.json")))
+        if(args.Contains("--redirect-during-drop") && File.Exists(Path.Combine(AppStorage.Root,"recovery.json")))
         {
             JsonStore.Write(Path.Combine(root,"report.json"),new { Success=false,Errors=new[]{"Сначала завершите работающий экземпляр DesktopSpaces."} });
             Environment.ExitCode=1;return;
@@ -32,7 +32,7 @@ internal static class SurfaceProbe
         form.Shown+=(_,_)=> {
             if(args.Contains("--redirect-during-drop"))
             {
-                var journal=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DesktopSpaces","recovery.json");
+                var journal=Path.Combine(AppStorage.Root,"recovery.json");
                 var desktop=new WindowsDesktopPath();redirectedSession=new DesktopSession(desktop,journal,Native.RestoreDesktopIcons);
                 using var process=Process.GetCurrentProcess();redirectedSession.Start(desktop.Get(),process.Id,process.StartTime.ToUniversalTime().Ticks);
                 redirectedStarted=true;

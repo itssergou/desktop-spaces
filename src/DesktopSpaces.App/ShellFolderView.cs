@@ -13,6 +13,8 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
     private readonly Space _space;
     private readonly Action<Exception> _error;
     private readonly Dictionary<string,string?> _itemNames=new();
+    private readonly System.Windows.Forms.Timer _placementTimer=new() {Interval=75};
+    private readonly Queue<(HashSet<string> Names,Native.Point Point,DateTime Until)> _placements=new();
     public event Action? Ready;
     public Space Space => _space;
     public bool IsReady => _ready;
@@ -35,6 +37,16 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
         Dock=DockStyle.Fill;
         BackColor=Color.FromArgb(28,32,40);
         Application.AddMessageFilter(this);
+        _placementTimer.Tick+=(_,_)=> {
+            if(_placements.Count==0){_placementTimer.Stop();return;}
+            var next=_placements.Peek();
+            // Shell can finish its own asynchronous placement after the file first
+            // appears. Keep checking through that completion, rather than treating
+            // the first successful HRESULT as the final icon position.
+            try { PositionItems(next.Names,next.Point);if(DateTime.UtcNow>=next.Until)_placements.Dequeue(); }
+            catch(Exception ex) { _placements.Dequeue();_error(ex); }
+            if(_placements.Count==0)_placementTimer.Stop();
+        };
     }
 
     protected override void OnHandleCreated(EventArgs e)
@@ -100,6 +112,11 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
     public void SaveLayout()
     {
         MaintainView();
+        CaptureLayout();
+    }
+
+    private void CaptureLayout()
+    {
         var view=GetFolderView(); if(view is null)return;
         try
         {
@@ -219,7 +236,7 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
                     try { Native.Check(((IFolderView2)obj).SetCurrentFolderFlags(1,0)); }
                     finally { Marshal.ReleaseComObject(obj); }
                 }
-                _ready=true;UpdateBackground();InstallDropProxy();RestoreLayout();Ready?.Invoke();Ready=null;
+                _ready=true;UpdateBackground();InstallDropProxy();RestoreLayout();RepairOverlaps();Ready?.Invoke();Ready=null;
             } catch(Exception ex) { _error(ex); }
         }));
         return 0;
@@ -271,6 +288,7 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
     protected override void Dispose(bool disposing)
     {
         if(disposing)Application.RemoveMessageFilter(this);
+        if(disposing)_placementTimer.Dispose();
         if(_browser is not null)
         {
             if(_proxyList!=IntPtr.Zero && Native.IsWindow(_proxyList))Native.RevokeDragDrop(_proxyList);
@@ -339,6 +357,31 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
         }
         else if(LiveBackground && Native.SendMessage(list,0x1000,IntPtr.Zero,IntPtr.Zero).ToInt64()!=DesktopHost.TransparentColorRef)
             UpdateBackground();
+        RepairOverlaps();
+    }
+
+    private void RepairOverlaps()
+    {
+        if((Native.GetAsyncKeyState(1)&0x8000)!=0)return;
+        CaptureLayout();
+        var view=GetFolderView();if(view is null)return;
+        Native.Point spacing;
+        try { Native.Check(view.GetSpacing(out spacing)); }
+        finally { Marshal.ReleaseComObject(view); }
+        var sx=spacing.X>=16?spacing.X:SystemInformation.IconSpacingSize.Width;
+        var sy=spacing.Y>=16?spacing.Y:SystemInformation.IconSpacingSize.Height;
+        var occupied=new List<IconPosition>();
+        foreach(var (name,p) in _space.Layout.ToArray())
+        {
+            if(occupied.Any(q=>Math.Abs((long)p.X-q.X)<sx && Math.Abs((long)p.Y-q.Y)<sy))
+            {
+                var point=new Native.Point(p.X+40,p.Y+24);
+                Native.MapWindowPoints(ListHandle,IntPtr.Zero,ref point,1);
+                PositionItems(new HashSet<string>(StringComparer.OrdinalIgnoreCase){name},point);
+                occupied.Add(_space.Layout.GetValueOrDefault(name,p));
+            }
+            else occupied.Add(p);
+        }
     }
 
     private void InstallDropProxy()
@@ -366,12 +409,70 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
 
     public bool ContainsFiles(string[] files)=>files.Length>0 && files.All(path=>Paths.Equal(Path.GetDirectoryName(path)!,_space.Folder));
 
+    public bool IsFolderTarget(Native.Point screenPoint)
+    {
+        var list=ListHandle;if(list==IntPtr.Zero)return false;
+        Native.ScreenToClient(list,ref screenPoint);var hit=new Native.HitTest {Point=screenPoint};
+        var index=(int)Native.SendMessage(list,0x1012,IntPtr.Zero,ref hit);
+        if(index<0)return false;
+        var view=GetFolderView();if(view is null)return false;
+        try
+        {
+            if(view.Item(index,out var pidl)<0)return false;
+            try { var name=CachedItemName(view,pidl);return name is not null && Directory.Exists(Path.Combine(_space.Folder,name)); }
+            finally { Marshal.FreeCoTaskMem(pidl); }
+        }
+        finally { Marshal.ReleaseComObject(view); }
+    }
+
     public bool MoveIcons(string[] files,Native.Point screenPoint)
     {
         if(!ContainsFiles(files))return false;
+        return PositionItems(files.Select(Path.GetFileName).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase),screenPoint);
+    }
+
+    public Action? PrepareIncomingPlacement(string[] files,Native.Point point)
+    {
+        var names=files.Select(Path.GetFileName).OfType<string>()
+            .Where(n=>!File.Exists(Path.Combine(_space.Folder,n)) && !Directory.Exists(Path.Combine(_space.Folder,n)))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if(names.Count==0)return null;
+        return ()=> { _placements.Enqueue((names,point,DateTime.UtcNow.AddSeconds(5)));_placementTimer.Start(); };
+    }
+
+    public Native.Point FreeDropPoint(string[] files,Native.Point point)
+    {
+        if(files.Length==0 || IsFolderTarget(point))return point;
+        var view=GetFolderView();if(view is null)return point;
+        try
+        {
+            Native.Check(view.ItemCount(2,out var count));var occupied=new List<IconPosition>();
+            for(var i=0;i<count;i++)
+            {
+                Native.Check(view.Item(i,out var pidl));
+                try { if(view.GetItemPosition(pidl,out var p)>=0 && Math.Abs((long)p.X)<1000000 && Math.Abs((long)p.Y)<1000000)occupied.Add(new IconPosition(p.X,p.Y)); }
+                finally { Marshal.FreeCoTaskMem(pidl); }
+            }
+            Native.Check(view.GetSpacing(out var spacing));
+            var sx=spacing.X>=16?spacing.X:SystemInformation.IconSpacingSize.Width;
+            var sy=spacing.Y>=16?spacing.Y:SystemInformation.IconSpacingSize.Height;
+            var client=point;Native.ScreenToClient(ListHandle,ref client);Native.GetClientRect(ListHandle,out var bounds);
+            var placement=IconPlacement.FindFreeGroup([new IconPosition(0,0)],occupied,new IconPosition(client.X-40,client.Y-24),sx,sy,bounds.Right,bounds.Bottom);
+            if(placement is null)return point;
+            var result=new Native.Point(placement[0].X+40,placement[0].Y+24);
+            Native.MapWindowPoints(ListHandle,IntPtr.Zero,ref result,1);
+            TransferTrace.Write("drop-position",new {Original=new {point.X,point.Y},Target=new {result.X,result.Y},SpacingX=sx,SpacingY=sy});
+            return result;
+        }
+        finally { Marshal.ReleaseComObject(view); }
+    }
+
+    private bool PositionItems(HashSet<string> names,Native.Point screenPoint)
+    {
+        if((Native.GetAsyncKeyState(1)&0x8000)!=0)return false;
         var view=GetFolderView();if(view is null)return false;
         var pidls=new List<IntPtr>();var positions=new List<Native.Point>();
-        var names=files.Select(Path.GetFileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var occupied=new List<IconPosition>();
         try
         {
             Native.Check(view.ItemCount(2,out var count));
@@ -379,20 +480,28 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
             {
                 Native.Check(view.Item(i,out var pidl));var keep=false;
                 try {
-                    if(names.Contains(CachedItemName(view,pidl)) && view.GetItemPosition(pidl,out var position)>=0)
+                    if(CachedItemName(view,pidl) is string name && names.Contains(name) && view.GetItemPosition(pidl,out var position)>=0)
                     { pidls.Add(pidl);positions.Add(position);keep=true; }
+                    else if(view.GetItemPosition(pidl,out var other)>=0 && Math.Abs((long)other.X)<1000000 && Math.Abs((long)other.Y)<1000000)
+                        occupied.Add(new IconPosition(other.X,other.Y));
                 }
                 finally { if(!keep)Marshal.FreeCoTaskMem(pidl); }
             }
             if(pidls.Count!=names.Count)return false;
             Native.ScreenToClient(ListHandle,ref screenPoint);
             view.GetSpacing(out var spacing);
-            var x=13+Math.Max(0,(int)Math.Round((screenPoint.X-40-13)/(double)Math.Max(1,spacing.X)))*Math.Max(1,spacing.X);
-            var y=2+Math.Max(0,(int)Math.Round((screenPoint.Y-24-2)/(double)Math.Max(1,spacing.Y)))*Math.Max(1,spacing.Y);
             var origin=positions[0];
-            var points=positions.Select(p=>new Native.Point(x+p.X-origin.X,y+p.Y-origin.Y)).ToArray();
+            Native.GetClientRect(ListHandle,out var bounds);
+            var offsets=positions.Select(p=>new IconPosition(p.X-origin.X,p.Y-origin.Y)).ToArray();
+            var placement=IconPlacement.FindFreeGroup(offsets,occupied,new IconPosition(screenPoint.X-40,screenPoint.Y-24),spacing.X>=16?spacing.X:SystemInformation.IconSpacingSize.Width,spacing.Y>=16?spacing.Y:SystemInformation.IconSpacingSize.Height,bounds.Right,bounds.Bottom);
+            if(placement is null)return false;
+            if(positions.Select(p=>new IconPosition(p.X,p.Y)).SequenceEqual(placement))return true;
+            var points=placement.Select(p=>new Native.Point(p.X,p.Y)).ToArray();
             Native.Check(view.SelectAndPositionItems((uint)pidls.Count,pidls.ToArray(),points,0x80|1|4));
-            SaveLayout();return true;
+            var actual=pidls.Select(p=> {Native.Check(view.GetItemPosition(p,out var value));return new IconPosition(value.X,value.Y);}).ToArray();
+            TransferTrace.Write("icons-positioned",new {Names=names,Before=positions.Select(p=>new IconPosition(p.X,p.Y)).ToArray(),Requested=placement,Actual=actual});
+            // Capturing must not call MaintainView/RestoreLayout and undo this move.
+            CaptureLayout();return actual.SequenceEqual(placement);
         }
         finally { foreach(var pidl in pidls)Marshal.FreeCoTaskMem(pidl);Marshal.ReleaseComObject(view); }
     }

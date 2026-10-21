@@ -56,7 +56,7 @@ internal sealed class DesktopInputSurface : Form,IDropTargetNative
     {
         var view=_active();
         if(view is null){effect=0;return false;}
-        if((keys&8)==0 && view.ContainsFiles(_files)){ReleaseTarget();effect=2;return false;}
+        if((keys&8)==0 && view.ContainsFiles(_files) && !view.IsFolderTarget(point)){ReleaseTarget();effect=2;return false;}
         if(_targetId!=view.Space.Id)
         {
             ReleaseTarget();_target=view.GetDropTarget();_targetId=view.Space.Id;
@@ -66,17 +66,25 @@ internal sealed class DesktopInputSurface : Form,IDropTargetNative
         return _target is not null;
     }
     int IDropTargetNative.DragEnter(System.Runtime.InteropServices.ComTypes.IDataObject data,uint keys,Native.Point point,ref uint effect)
-    { try { _data=PrepareData?.Invoke(data) ?? data;_files=OleFiles.Read(_data);EnsureTarget(keys,point,ref effect);return 0; }catch { effect=0;return 0; } }
+    { try { _data=PrepareData?.Invoke(data) ?? data;_files=OleFiles.Read(_data);TransferTrace.Write("drag-enter",new {Target=_active()?.Space.Folder,Files=TransferTrace.Files(_files),keys,effect});EnsureTarget(keys,point,ref effect);return 0; }catch(Exception ex) { TransferTrace.Write("drag-enter-error",ex.ToString());effect=0;return 0; } }
     int IDropTargetNative.DragOver(uint keys,Native.Point point,ref uint effect)
     { try { return EnsureTarget(keys,point,ref effect) ? _target!.DragOver(keys,point,ref effect) : 0; }catch { effect=0;return 0; } }
     int IDropTargetNative.DragLeave() { ReleaseTarget();_data=null;_files=[];return 0; }
     public int Drop(System.Runtime.InteropServices.ComTypes.IDataObject data,uint keys,Native.Point point,ref uint effect)
     {
         try {
-            if((keys&8)==0 && _active()?.MoveIcons(_files,point)==true){effect=2;return 0;}
-            return EnsureTarget(keys,point,ref effect) ? _target!.Drop(_data ?? data,keys,point,ref effect) : 0;
+            TransferTrace.Write("drop",new {Target=_active()?.Space.Folder,Files=TransferTrace.Files(_files),CurrentFiles=TransferTrace.Files(OleFiles.Read(data)),keys,effect});
+            if((keys&8)==0 && _active() is { } current && !current.IsFolderTarget(point) && current.MoveIcons(_files,point)){effect=2;return 0;}
+            if(!EnsureTarget(keys,point,ref effect))return 0;
+            var destination=_active();
+            var dropPoint=destination?.FreeDropPoint(_files,point) ?? point;
+            var place=destination?.PrepareIncomingPlacement(_files,dropPoint);
+            Native.Check(_target!.DragOver(keys,dropPoint,ref effect));
+            var result=_target.Drop(_data ?? data,keys,dropPoint,ref effect);
+            if(result>=0)place?.Invoke();
+            return result;
         }
-        catch { effect=0;return 0; }
+        catch(Exception ex) { TransferTrace.Write("drop-error",ex.ToString());effect=0;return 0; }
         finally { ReleaseTarget(false);_data=null;_files=[]; }
     }
     protected override void Dispose(bool disposing)

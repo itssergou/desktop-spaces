@@ -1,4 +1,4 @@
-# This opt-in local check temporarily redirects the current user's Desktop.
+# This opt-in check operates the real desktop host and verifies a fixed Known Folder.
 # Do not run as part of CI; no existing user files are moved or deleted.
 param([string]$Executable, [switch]$SimulateCrash)
 $ErrorActionPreference = 'Stop'
@@ -12,7 +12,7 @@ if (-not $Executable) { $Executable = Join-Path $desktopTestRoot 'src\DesktopSpa
 $Executable = (Resolve-Path -LiteralPath $Executable).Path
 $desktopTestReportDir = Join-Path $desktopTestRoot 'artifacts\desktop-integration'
 New-Item -ItemType Directory -Force -Path $desktopTestReportDir | Out-Null
-$desktopTestJournal = Join-Path $env:LOCALAPPDATA 'DesktopSpaces\recovery.json'
+$desktopTestJournal = Join-Path $env:USERPROFILE '.desktop-spaces\recovery.json'
 if (Test-Path -LiteralPath $desktopTestJournal) { throw 'An active or unfinished session exists; integration check not started.' }
 $desktopTestOriginalFile = Join-Path $desktopTestReportDir 'original.txt'
 $desktopTestOriginalReader = Start-Process -FilePath $Executable -ArgumentList '--read-desktop', ('"' + $desktopTestOriginalFile + '"') -PassThru -WindowStyle Hidden
@@ -34,13 +34,13 @@ try {
     }
     $desktopTestCommand = Start-Process -FilePath $Executable -ArgumentList '--switch=2' -PassThru -WindowStyle Hidden
     [void]$desktopTestCommand.WaitForExit(10000)
-    $desktopTestConfigPath = Join-Path $env:LOCALAPPDATA 'DesktopSpaces\settings.json'
+    $desktopTestConfigPath = Join-Path $env:USERPROFILE '.desktop-spaces\settings.json'
     $desktopTestDeadline = [DateTime]::UtcNow.AddSeconds(15)
     do {
         Start-Sleep -Milliseconds 100
         $desktopTestStatusProcess = Start-Process -FilePath $Executable -ArgumentList '--status' -PassThru -WindowStyle Hidden
         [void]$desktopTestStatusProcess.WaitForExit(5000)
-        $desktopTestStatusFile = Join-Path $env:LOCALAPPDATA 'DesktopSpaces\status.json'
+        $desktopTestStatusFile = Join-Path $env:USERPROFILE '.desktop-spaces\status.json'
         $desktopTestLiveStatus = if (Test-Path -LiteralPath $desktopTestStatusFile) { Read-TestJson $desktopTestStatusFile } else { $null }
         $desktopTestConfig = Read-TestJson $desktopTestConfigPath
         if ([DateTime]::UtcNow -gt $desktopTestDeadline) { throw 'Space 2 activation timed out.' }
@@ -49,14 +49,14 @@ try {
     $desktopTestReader = Start-Process -FilePath $Executable -ArgumentList '--read-desktop', ('"' + $desktopTestReadFile + '"') -PassThru -WindowStyle Hidden
     if (-not $desktopTestReader.WaitForExit(10000)) { throw 'Active desktop read timed out.' }
     $desktopTestActive = Get-Content -LiteralPath $desktopTestReadFile -Raw
-    if ($desktopTestActive -ne $desktopTestConfig.Spaces[1].Folder) { throw 'Active known folder and displayed space differ.' }
+    if ($desktopTestActive -ne $desktopTestOriginal) { throw 'Switching changed the fixed Desktop known folder.' }
     $desktopTestReport.ActivePath = $desktopTestActive
     $desktopTestProcess.Refresh()
     $desktopTestReport.NoMainTaskbarWindow = $desktopTestProcess.MainWindowHandle -eq 0
     if (-not $desktopTestReport.NoMainTaskbarWindow) { throw 'An unexpected main taskbar window exists.' }
     $desktopTestStatusProcess = Start-Process -FilePath $Executable -ArgumentList '--status' -PassThru -WindowStyle Hidden
     [void]$desktopTestStatusProcess.WaitForExit(10000)
-    $desktopTestStatusFile = Join-Path $env:LOCALAPPDATA 'DesktopSpaces\status.json'
+    $desktopTestStatusFile = Join-Path $env:USERPROFILE '.desktop-spaces\status.json'
     $desktopTestStatusDeadline = [DateTime]::UtcNow.AddSeconds(5)
     do {
         Start-Sleep -Milliseconds 100

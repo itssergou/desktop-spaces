@@ -39,7 +39,7 @@ internal static class Program
             if(args.Contains("--path-smoke")) { PathSmoke.Run();return; }
             if(args.Contains("--recover"))
             {
-                var journal=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DesktopSpaces","recovery.json");
+                var journal=Path.Combine(AppStorage.Root,"recovery.json");
                 DesktopSession.Recover(new WindowsDesktopPath(),journal,restoreSurface:Native.RestoreDesktopIcons);return;
             }
             using var context=new DesktopApplication(demo);
@@ -47,7 +47,7 @@ internal static class Program
         }
         catch(Exception ex)
         {
-            var root=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DesktopSpaces");
+            var root=AppStorage.Root;Directory.CreateDirectory(root);
             DesktopApplication.Log(root,ex);
             MessageBox.Show(ex.Message,"DesktopSpaces — запуск остановлен",MessageBoxButtons.OK,MessageBoxIcon.Error);
         }

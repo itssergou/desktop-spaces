@@ -36,6 +36,33 @@ internal static class Program
             var frozen=OleFiles.FreezeBeforeChange(changing,()=>currentPath=redirected);
             if(OleFiles.Read(changing).Single()!=redirected || OleFiles.Read(frozen).Single()!=original || !File.Exists(original))throw new Exception("Source path changed after snapshot.");
             Console.WriteLine("PASS File source snapshot survives Desktop-relative path changes");
+            var migration=AppConfig.Create(Path.Combine(root,"MigrationDesktop"),Path.Combine(root,"Legacy"));
+            Directory.CreateDirectory(migration.Spaces[1].Folder);
+            var oldFolder=migration.Spaces[1].Folder;
+            Directory.CreateDirectory(Path.Combine(oldFolder,"Nested"));
+            File.WriteAllText(Path.Combine(oldFolder,"Nested","Данные.txt"),"migration preserves files");
+            var sourceRoot=Path.Combine(root,"OldApp");Directory.CreateDirectory(sourceRoot);
+            JsonStore.Write(Path.Combine(sourceRoot,"settings.json"),migration);
+            var stableRoot=Path.Combine(root,"Stable");
+            AppStorage.ImportLegacy(stableRoot,[sourceRoot]);
+            var migrated=JsonStore.LoadConfig(Path.Combine(stableRoot,"settings.json"));
+            if(migrated.Spaces[1].Id!=migration.Spaces[1].Id || migrated.Spaces[1].Folder==oldFolder ||
+                File.ReadAllText(Path.Combine(migrated.Spaces[1].Folder,"Nested","Данные.txt"))!="migration preserves files" ||
+                !File.Exists(Path.Combine(oldFolder,"Nested","Данные.txt")))throw new Exception("Migration lost source data or identity.");
+            if(AppStorage.ImportLegacy(stableRoot,[sourceRoot]))throw new Exception("Migration is not idempotent.");
+            Console.WriteLine("PASS Legacy storage migration preserves files, IDs and originals and is idempotent");
+            var virtualRoot=Path.Combine(root,"VirtualAppData");
+            var packageRoot=Path.Combine(root,"Package","LocalCache","Local","DesktopSpaces");
+            var virtualConfig=AppConfig.Create(Path.Combine(root,"RealDesktop"),Path.Combine(virtualRoot,"Spaces"));
+            var physical=Path.Combine(packageRoot,"Spaces",virtualConfig.Spaces[1].Id.ToString("N"));
+            Directory.CreateDirectory(physical);File.WriteAllText(Path.Combine(physical,"Real.txt"),"visible outside package");
+            JsonStore.Write(Path.Combine(packageRoot,"settings.json"),virtualConfig);
+            var sharedRoot=Path.Combine(root,"Shared");
+            AppStorage.ImportLegacy(sharedRoot,[packageRoot],virtualRoot);
+            var shared=JsonStore.LoadConfig(Path.Combine(sharedRoot,"settings.json"));
+            if(File.ReadAllText(Path.Combine(shared.Spaces[1].Folder,"Real.txt"))!="visible outside package" ||
+                !File.Exists(Path.Combine(physical,"Real.txt")))throw new Exception("Package paths were not resolved to physical storage.");
+            Console.WriteLine("PASS Package-private legacy paths migrate to shared physical storage without losing originals");
             return 0;
         }
         catch(Exception ex) { Console.Error.WriteLine(ex);return 1; }

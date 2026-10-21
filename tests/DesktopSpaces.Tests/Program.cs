@@ -2,6 +2,10 @@ using DesktopSpaces.Core;
 
 var tests=new (string Name,Action<Fixture> Run)[]
 {
+    ("Dropping on an occupied icon chooses a nearby free cell",_=>{var p=IconPlacement.FindFreeGroup([new(0,0)],[new(13,2)],new(13,2),75,98,600,600)!;Assert(p.Length==1 && p[0]!=new IconPosition(13,2));Assert(Math.Abs(p[0].X-13)>=75 || Math.Abs(p[0].Y-2)>=98);}),
+    ("Group placement preserves offsets and avoids every occupied icon",_=>{var occupied=new[]{new IconPosition(13,2),new IconPosition(88,100)};var p=IconPlacement.FindFreeGroup([new(0,0),new(75,0)],occupied,new(13,2),75,98,600,600)!;Assert(p[1].X-p[0].X==75 && p[1].Y==p[0].Y);Assert(p.All(x=>occupied.All(o=>Math.Abs(x.X-o.X)>=75 || Math.Abs(x.Y-o.Y)>=98)));}),
+    ("Placement stays in view near the screen edge",_=>{var p=IconPlacement.FindFreeGroup([new(0,0)],[],new(5000,5000),75,98,300,300)![0];Assert(p.X>=0 && p.Y>=0 && p.X+75<=300 && p.Y+98<=300);}),
+    ("Full grid does not return an overlapping placement",_=>Assert(IconPlacement.FindFreeGroup([new(0,0)],[new(13,2)],new(13,2),75,98,100,110) is null)),
     ("Default spaces preserve original desktop",f=>{var c=f.Config();c.Validate();Assert(c.Spaces.Count==2 && Paths.Equal(c.Spaces[0].Folder,f.Original));Assert(c.Spaces[1].Folder.StartsWith(f.Storage));}),
     ("New spaces have unique paths without moving files",f=>{var c=f.Config();var a=c.AddSpace("Games",f.Storage);var b=c.AddSpace("Games",f.Storage);Assert(a.Id!=b.Id && a.Folder!=b.Folder);Assert(Directory.Exists(a.Folder));Assert(File.ReadAllText(f.Sample)=="keep me");}),
     ("Invalid active identifier falls back to first",f=>{var c=f.Config();c.ActiveSpaceId=Guid.NewGuid();c.Validate();Assert(c.ActiveSpaceId==c.Spaces[0].Id);}),

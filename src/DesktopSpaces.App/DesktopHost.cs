@@ -9,6 +9,7 @@ internal sealed class DesktopHost : Form
     private DesktopInputSurface? _input;
     private bool _originalIconsVisible;
     private bool _ownsNativeSurface;
+    private bool _focusNativeAfterDrag;
     private readonly Action<bool> _rememberIcons;
     private Size _desktopSize;
     private readonly Label _indicator=new() { AutoSize=true, BackColor=Color.FromArgb(35,40,50), ForeColor=Color.White,
@@ -33,7 +34,7 @@ internal sealed class DesktopHost : Form
         StartPosition=demo ? FormStartPosition.CenterScreen : FormStartPosition.Manual;
         Size=new Size(1100,740);
         Controls.Add(_indicator);
-        _indicatorTimer.Tick+=(_,_)=>{_indicator.Hide();_indicatorTimer.Stop();if(NativeDesktopActive)Hide();};
+        _indicatorTimer.Tick+=(_,_)=>{_indicator.Hide();_indicatorTimer.Stop();if(NativeDesktopActive && (Native.GetAsyncKeyState(1)&0x8000)==0)Hide();};
     }
 
 
@@ -95,18 +96,24 @@ internal sealed class DesktopHost : Form
     public void ActivateSpace(Guid id,string name,bool showIndicator)
     {
         var next=_views[id];
+        _focusNativeAfterDrag=false;
         NativeDesktopActive=false;ActiveSpaceId=id;
         if(!_demo)
         {
             // Hiding Explorer's source HWND during DoDragDrop can cancel its drag.
             // Cover it until the mouse is released, then hide its original icons.
-            if(_ownsNativeSurface && (Native.GetAsyncKeyState(1)&0x8000)==0)Native.ShowWindow(Native.DesktopList(),0);
+            if(_ownsNativeSurface)
+            {
+                Native.MaskWindow(Native.DesktopList(),true);
+                if((Native.GetAsyncKeyState(1)&0x8000)==0)Native.ShowWindow(Native.DesktopList(),0);
+            }
             _input!.Show();
         }
         Show();
-        next.Show();next.BringToFront();
+        Native.MaskWindow(next.Handle,false);next.Show();next.BringToFront();
         if(!_demo)Native.SetWindowPos(Handle,IntPtr.Zero,0,0,0,0,0x0040|0x0010|0x0001|0x0002);
-        if(ActiveView is not null && ActiveView!=next && (Native.GetAsyncKeyState(1)&0x8000)==0)ActiveView.Hide();
+        if(ActiveView is not null && ActiveView!=next)
+        { Native.MaskWindow(ActiveView.Handle,true);if((Native.GetAsyncKeyState(1)&0x8000)==0)ActiveView.Hide(); }
         ActiveView=next;
         if(showIndicator)
             ShowName(name);
@@ -132,7 +139,9 @@ internal sealed class DesktopHost : Form
 
     public void ActivateNativeDesktop(Guid id,string name,bool showIndicator)
     {
+        if(ActiveView is not null)Native.MaskWindow(ActiveView.Handle,true);
         ActiveSpaceId=id;NativeDesktopActive=true;ActiveView=null;
+        if(!_demo)Native.MaskWindow(Native.DesktopList(),false);
         if(!_demo && _originalIconsVisible)Native.ShowWindow(Native.DesktopList(),5);
         _input?.Hide();
         if((Native.GetAsyncKeyState(1)&0x8000)!=0)
@@ -144,6 +153,8 @@ internal sealed class DesktopHost : Form
             ShowName(name);
         }
         else { _indicator.Hide();Hide(); }
+        _focusNativeAfterDrag=!_demo && (Native.GetAsyncKeyState(1)&0x8000)!=0;
+        if(!_demo && !_focusNativeAfterDrag)Native.FocusNativeDesktop();
     }
 
     public bool IsEmptyPoint(Point p) => NativeDesktopActive ? ShellFolderView.IsEmptyPointAt(DesktopParent,p) : ActiveView?.IsEmptyPoint(p)==true;
@@ -179,6 +190,8 @@ internal sealed class DesktopHost : Form
     {
         ActiveView?.MaintainView();
         if((Native.GetAsyncKeyState(1)&0x8000)!=0)return;
+        if(_focusNativeAfterDrag)
+        { _focusNativeAfterDrag=false;if(NativeDesktopActive && IsDesktopForeground())Native.FocusNativeDesktop(); }
         if(_ownsNativeSurface && !NativeDesktopActive)Native.ShowWindow(Native.DesktopList(),0);
         if(NativeDesktopActive && !_indicator.Visible)Hide();
         foreach(var view in _views.Values)if(view!=ActiveView)view.Hide();
@@ -188,6 +201,7 @@ internal sealed class DesktopHost : Form
     protected override void Dispose(bool disposing)
     {
         if(disposing) {
+            if(!_demo)Native.MaskWindow(Native.DesktopList(),false);
             if(!_demo && _originalIconsVisible)Native.ShowWindow(Native.DesktopList(),5);
             _input?.Dispose();_indicatorTimer.Dispose();foreach(var view in _views.Values)view.Dispose();_views.Clear();
         }

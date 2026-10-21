@@ -4,7 +4,7 @@ internal static class Watchdog
 {
     public static void Run(string journal)
     {
-        var expected=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DesktopSpaces","recovery.json");
+        var expected=Path.Combine(AppStorage.Root,"recovery.json");
         if(!Paths.Equal(journal,expected))return;
         try
         {

@@ -22,12 +22,12 @@ internal sealed class SettingsForm : Form
         _config=config;_save=save;_error=error;_remove=remove;_move=move;_select=select;
         Text="DesktopSpaces — настройки";Font=new Font("Segoe UI",10);AutoScaleMode=AutoScaleMode.Dpi;
         ShowInTaskbar=demo && Environment.GetCommandLineArgs().Contains("--ui-test");StartPosition=FormStartPosition.CenterScreen;
-        ClientSize=new Size(880,760);MinimumSize=new Size(860,740);
+        ClientSize=new Size(880,810);MinimumSize=new Size(860,790);
         BackColor=Color.FromArgb(244,246,249);
         var page=new TableLayoutPanel { Dock=DockStyle.Fill,Padding=new Padding(28,20,28,20),ColumnCount=1,RowCount=7 };
         foreach(var height in new[]{58,50})page.RowStyles.Add(new RowStyle(SizeType.Absolute,height));
         page.RowStyles.Add(new RowStyle(SizeType.Percent,100));
-        foreach(var height in new[]{48,160,100,40})page.RowStyles.Add(new RowStyle(SizeType.Absolute,height));
+        foreach(var height in new[]{48,160,150,40})page.RowStyles.Add(new RowStyle(SizeType.Absolute,height));
         Controls.Add(page);
         page.Controls.Add(new Label { Text="DesktopSpaces",Font=new Font("Segoe UI",24,FontStyle.Bold),AutoSize=true,ForeColor=Color.FromArgb(27,37,54) });
         page.Controls.Add(new Label { Text=demo ? "Демонстрация: используются тестовые папки. Ваш рабочий стол не меняется." : "Двойной щелчок по пустому месту рабочего стола — следующее пространство.",Dock=DockStyle.Fill,ForeColor=demo ? Color.DarkGoldenrod : Color.FromArgb(85,95,110) });
@@ -56,8 +56,12 @@ internal sealed class SettingsForm : Form
             _list.InsertionMark.Index=-1;
             if(e.Data?.GetData("DesktopSpaces.Space") is not string value || !Guid.TryParse(value,out var id))return;
             var point=_list.PointToClient(new Point(e.X,e.Y));var target=_list.GetItemAt(point.X,point.Y);
-            var destination=target?.Index ?? _list.Items.Count-1;
-            if(destination<=0)return;
+            if(target?.Index==0)return;
+            var source=_list.Items.Cast<ListViewItem>().FirstOrDefault(item=>Equals(item.Tag,id));
+            if(source is null)return;
+            var insertion=target is null ? _list.Items.Count : target.Index+(point.Y>target.Bounds.Top+target.Bounds.Height/2?1:0);
+            var destination=insertion-(source.Index<insertion?1:0);
+            if(destination<=0 || destination==source.Index)return;
             Try(()=>{_move(id,destination);RefreshSpaces(id);});
         };
         page.Controls.Add(_list);
@@ -98,7 +102,7 @@ internal sealed class SettingsForm : Form
         page.Controls.Add(preferences);
         var keys=config.Preferences.UseControlAlt?"Ctrl + Alt":"Alt";
         var instruction=new Label { Dock=DockStyle.Fill,ForeColor=Color.FromArgb(85,95,110) };
-        instruction.Text=$"Перенос файла: зажмите левую кнопку мыши на файле и начните его перетаскивать.\nНаведите курсор на рабочий стол, не отпуская мышь нажмите {keys} + номер пространства.\nОтпустите клавиши, затем левую кнопку мыши там, куда хотите положить файл.\nТакже можно: Ctrl + X → перейти в другое пространство → Ctrl + V. Настройки сохраняются автоматически.";
+        instruction.Text=$"Перенос файла: зажмите левую кнопку мыши на файле и начните его перетаскивать.\nНаведите курсор на рабочий стол, не отпуская мышь нажмите {keys} + номер пространства.\nОтпустите клавиши, затем левую кнопку мыши там, куда хотите положить файл.\nТакже можно: Ctrl + X → перейти в другое пространство → Ctrl + V.\nСистемная папка «Рабочий стол» всегда относится к первому пространству.\nДля сохранения из программ в остальные пространства выбирайте их папку через «Открыть папку».\nНастройки сохраняются автоматически.";
         modifier.SelectedIndexChanged+=(_,_)=>instruction.Text=instruction.Text.Replace(modifier.SelectedIndex==1?"Alt + номер":"Ctrl + Alt + номер",modifier.SelectedIndex==1?"Ctrl + Alt + номер":"Alt + номер");
         page.Controls.Add(instruction);
         var footer=new FlowLayoutPanel { Dock=DockStyle.Fill,FlowDirection=FlowDirection.RightToLeft };

@@ -39,6 +39,13 @@ internal static class Native
     [DllImport("ole32.dll")] internal static extern int RegisterDragDrop(IntPtr hwnd, [MarshalAs(UnmanagedType.Interface)] IDropTargetNative target);
     [DllImport("ole32.dll")] internal static extern int RevokeDragDrop(IntPtr hwnd);
     [DllImport("user32.dll")] internal static extern bool ShowWindow(IntPtr hwnd,int command);
+    [DllImport("user32.dll")] internal static extern bool SetWindowRgn(IntPtr hwnd,IntPtr region,bool redraw);
+    [DllImport("gdi32.dll")] internal static extern IntPtr CreateRectRgn(int left,int top,int right,int bottom);
+    [DllImport("user32.dll")] internal static extern bool SetForegroundWindow(IntPtr hwnd);
+    [DllImport("kernel32.dll")] internal static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")] internal static extern bool AttachThreadInput(uint from,uint to,bool attach);
+    [DllImport("kernel32.dll",ExactSpelling=true)] private static extern int GetCurrentPackageFullName(ref uint length,IntPtr name);
+    internal static bool HasPackageIdentity(){uint length=0;return GetCurrentPackageFullName(ref length,IntPtr.Zero)==122;}
     [DllImport("user32.dll")] internal static extern bool SetLayeredWindowAttributes(IntPtr hwnd,uint color,byte alpha,uint flags);
     [DllImport("oleacc.dll")] internal static extern int AccessibleObjectFromWindow(IntPtr hwnd,uint objectId,ref Guid iid,[MarshalAs(UnmanagedType.Interface)]out object accessible);
     [DllImport("user32.dll")] internal static extern int MapWindowPoints(IntPtr from,IntPtr to,ref Point point,uint count);
@@ -47,6 +54,7 @@ internal static class Native
     [DllImport("user32.dll")] internal static extern bool GetWindowRect(IntPtr hwnd, out Rect rect);
     [DllImport("user32.dll")] internal static extern bool ScreenToClient(IntPtr hwnd, ref Point point);
     [DllImport("user32.dll")] internal static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] internal static extern IntPtr GetFocus();
     [DllImport("user32.dll")] internal static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
     [DllImport("user32.dll")] internal static extern IntPtr WindowFromPoint(Point point);
     [DllImport("user32.dll")] internal static extern short GetAsyncKeyState(int key);
@@ -75,9 +83,24 @@ internal static class Native
     internal static string ClassName(IntPtr hwnd) { var s=new StringBuilder(256); GetClassName(hwnd,s,s.Capacity); return s.ToString(); }
     internal static void Check(int hr) { if (hr < 0) Marshal.ThrowExceptionForHR(hr); }
     internal static IntPtr DesktopList() => FindWindowEx(FindDesktopView(),IntPtr.Zero,"SysListView32",null);
+    internal static void MaskWindow(IntPtr hwnd,bool masked)
+    {
+        if(hwnd==IntPtr.Zero || !IsWindow(hwnd))return;
+        var region=masked?CreateRectRgn(0,0,0,0):IntPtr.Zero;
+        if(!SetWindowRgn(hwnd,region,true) && region!=IntPtr.Zero)DeleteObject(region);
+    }
+    internal static void FocusNativeDesktop()
+    {
+        var list=DesktopList();if(list==IntPtr.Zero)return;
+        var root=GetAncestor(list,2);var thread=GetWindowThreadProcessId(list,out _);var current=GetCurrentThreadId();
+        var attached=thread!=current && AttachThreadInput(current,thread,true);
+        try { SetForegroundWindow(root);SetFocus(list);TransferTrace.Write("native-focus",new {Restored=GetFocus()==list}); }
+        finally { if(attached)AttachThreadInput(current,thread,false); }
+    }
     internal static void RestoreDesktopIcons(RecoveryRecord record)
     {
-        if(record.RestoreDesktopIcons) { var list=DesktopList();if(list!=IntPtr.Zero)ShowWindow(list,5); }
+        var list=DesktopList();MaskWindow(list,false);
+        if(record.RestoreDesktopIcons && list!=IntPtr.Zero)ShowWindow(list,5);
     }
     internal static IntPtr FindDesktopView()
     {

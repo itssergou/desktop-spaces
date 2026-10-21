@@ -4,7 +4,7 @@ $ErrorActionPreference='Stop'
 $transferRoot=Split-Path -Parent $PSScriptRoot
 if(-not $Executable){$Executable=Join-Path $transferRoot 'src\DesktopSpaces.App\bin\Release\net8.0-windows\DesktopSpaces.exe'}
 if(-not $ReportDirectory){$ReportDirectory=Join-Path $transferRoot 'artifacts\transfer-regression'}
-$journal=Join-Path $env:LOCALAPPDATA 'DesktopSpaces\recovery.json'
+$journal=Join-Path $env:USERPROFILE '.desktop-spaces\recovery.json'
 if(Test-Path -LiteralPath $journal){throw 'Exit DesktopSpaces before running the transfer regression.'}
 $reportPath=Join-Path $ReportDirectory 'report.json'
 $transferArgs=@('--surface-probe','--exercise-drop','--redirect-during-drop','--round-trip',('"--report-dir='+[IO.Path]::GetFullPath($ReportDirectory)+'"'))

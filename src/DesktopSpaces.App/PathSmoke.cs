@@ -6,7 +6,7 @@ internal static class PathSmoke
     {
         var root=Program.DiagnosticRoot("path-smoke");
         var target=Path.Combine(root,Guid.NewGuid().ToString("N"));Directory.CreateDirectory(target);
-        var journal=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DesktopSpaces","recovery.json");
+        var journal=Path.Combine(AppStorage.Root,"recovery.json");
         var desktop=new WindowsDesktopPath();var original=desktop.Get();
         var report=new Dictionary<string,object?> { ["OriginalPath"]=original,["TargetPath"]=target };
         var session=new DesktopSession(desktop,journal);
