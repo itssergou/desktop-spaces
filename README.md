@@ -8,6 +8,9 @@
 мониторов. Результаты и непроверенные сценарии перечислены в
 [docs/VALIDATION.md](docs/VALIDATION.md).
 
+[Скачать выпуск 0.1.3](https://github.com/itssergou/desktop-spaces/releases/tag/v0.1.3)
+· [Сообщить об ошибке](https://github.com/itssergou/desktop-spaces/issues/new/choose)
+
 ## Возможности
 
 - Первый рабочий стол остаётся настоящим рабочим столом Windows.

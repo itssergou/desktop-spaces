@@ -94,4 +94,5 @@ Windows 10, другие конфигурации DPI и мониторов по
 не подтверждался явно; изменение записи Run покрыто предыдущими проверками.
 
 Локальные отчёты в `artifacts` содержат пути компьютера, исключены из Git и архива выпуска.
-OneDrive Known Folder Move по-прежнему блокируется. GitHub Actions ожидает публикации репозитория.
+OneDrive Known Folder Move по-прежнему блокируется. Сборки GitHub Actions:
+https://github.com/itssergou/desktop-spaces/actions.

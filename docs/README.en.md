@@ -5,6 +5,7 @@ shortcuts, files and folders. The first space is the original Windows desktop;
 additional spaces use native Windows Shell folder views.
 
 This is a **0.1.3 preview**, not a fully validated Windows shell replacement.
+[Download 0.1.3](https://github.com/itssergou/desktop-spaces/releases/tag/v0.1.3).
 Double-click empty desktop space to cycle, or use Alt + 1–9. Settings offer
 Ctrl + Alt as an alternative, space management, an indicator and opt-in startup.
 Exit from the tray to show the original Windows desktop.
