@@ -7,5 +7,8 @@ $probeArgs=@('--surface-probe','--exercise-drop',('"--report-dir='+[IO.Path]::Ge
 $probe=Start-Process -FilePath $Executable -ArgumentList $probeArgs -PassThru -WindowStyle Hidden
 if(-not $probe.WaitForExit(25000)){Stop-Process -Id $probe.Id;throw 'Surface/OLE probe timed out.'}
 $report=Get-Content (Join-Path $ReportDirectory 'report.json') -Raw | ConvertFrom-Json
-if($probe.ExitCode -ne 0 -or -not $report.Success){throw 'Surface/OLE probe failed; inspect report.json.'}
+if($probe.ExitCode -ne 0 -or -not $report.Success){
+    Write-Output ('Surface/OLE diagnostic report: '+($report | ConvertTo-Json -Depth 10 -Compress))
+    throw 'Surface/OLE probe failed; see the diagnostic report above.'
+}
 Write-Output 'OLE background drop, same-folder icon movement and live-background colour verified.'
