@@ -18,6 +18,9 @@
   and recheck through asynchronous drop completion. Repair collisions after Shell
   notifications and when loading a space. Capturing the result no longer invokes
   view maintenance that could restore an earlier layout over the new position.
+- Identify Shell items by their filesystem parsing names, including extensions.
+  Moving icons and restoring their positions now also work when Explorer hides
+  known file extensions.
 - Add opt-in local transfer diagnostics (`trace-transfers.enabled` in the app's
   local data folder). Logs remain local and are excluded from the release archive.
 

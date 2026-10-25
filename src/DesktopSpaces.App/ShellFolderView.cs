@@ -100,7 +100,9 @@ internal sealed class ShellFolderView : Panel, IExplorerBrowserEvents, ICommDlgB
             try
             {
                 var item=(IShellItem)obj;
-                if(item.GetDisplayName(0x80080001,out var name)<0)return null;
+                // Layout/drop keys must be filesystem parsing names. A friendly
+                // name can omit .txt/.lnk when Explorer hides file extensions.
+                if(item.GetDisplayName(0x80018001,out var name)<0)return null;
                 try { return Marshal.PtrToStringUni(name); }
                 finally { Marshal.FreeCoTaskMem(name); }
             }
