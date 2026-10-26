@@ -9,6 +9,7 @@ This is a **0.1.3 preview**, not a fully validated Windows shell replacement.
 Double-click empty desktop space to cycle, or use Alt + 1–9. Settings offer
 Ctrl + Alt as an alternative, space management, an indicator and opt-in startup.
 Exit from the tray to show the original Windows desktop.
+The application interface is currently in Russian.
 
 The portable x64 release includes .NET. Run `DesktopSpaces.exe --demo` to try
 isolated folders without redirecting the real desktop. For source builds use

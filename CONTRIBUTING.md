@@ -1,24 +1,25 @@
-# Участие в DesktopSpaces
+# Contributing to DesktopSpaces
 
-Для изменений создавайте отдельную ветку. В pull request опишите проблему,
-результирующее поведение и выполненные проверки. Для изменений Shell,
-системных путей или восстановления нужны проверки на временных папках и
-обновлённая матрица совместимости.
+Create a separate branch for changes. In a pull request, describe the problem,
+the resulting behavior and the checks you performed. Changes to Shell
+integration, system folder paths or recovery require tests using temporary
+folders and an updated compatibility matrix.
 
-Перед отправкой выполните сборку Release и проверки проекта
-`tests/DesktopSpaces.Tests`. Предупреждения компилятора считаются ошибками.
-Обычный CI не меняет системный путь рабочего стола. Проверка `--path-smoke`
-только для отдельного тестового профиля Windows, с журналом восстановления.
+Before submitting, run a Release build and the checks in
+`tests/DesktopSpaces.Tests`. Compiler warnings are treated as errors.
+Regular CI does not change the system Desktop folder path. Run `--path-smoke`
+only in a dedicated Windows test profile, with a recovery journal.
 
-Соблюдайте границы:
+Keep these boundaries:
 
-- не удалять файлы при исключении пространства из списка;
-- не копировать содержимое пространств при переключении;
-- не менять чужой путь, если он не принадлежит текущему сеансу;
-- не публиковать пользовательские настройки, журналы и содержимое папок;
-- не добавлять облачные зависимости или сбор данных без отдельного обсуждения;
-- не уничтожать источник OLE-переноса до завершения операции.
+- Do not delete files when removing a space from the list.
+- Do not copy space contents when switching spaces.
+- Do not change another program's folder path if it is not owned by the current
+  session.
+- Do not publish user settings, logs or folder contents.
+- Discuss cloud dependencies or data collection before adding them.
+- Do not destroy the source of an OLE drag before the operation completes.
 
-Сохраняйте простой C# и документируйте Win32/COM-вызовы, где контракт неочевиден.
-При добавлении зависимости проверьте её лицензию и необходимые уведомления.
-Вклад распространяется под лицензией MIT этого проекта.
+Keep the C# code straightforward. Document Win32 and COM calls where their
+contracts are not obvious. Check licenses and required notices before adding a
+dependency. Contributions are distributed under this project's MIT license.

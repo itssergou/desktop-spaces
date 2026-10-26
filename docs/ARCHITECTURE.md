@@ -1,135 +1,148 @@
-# Техническая основа
+# Architecture
 
-## Слои
+## Layers
 
-- `DesktopSpaces.Core`: модель пространств, проверка путей, атомарный JSON,
-  транзакция смены рабочего стола и восстановление. Без Windows UI-зависимостей.
-- `DesktopSpaces.App`: Windows Forms, трей, Win32-перехватчики, COM Windows Shell,
-  обои и привязка к поверхности рабочего стола.
-- `DesktopSpaces.Tests`: независимые проверки модели и аварийных сценариев;
-  исполнитель возвращает ненулевой код при сбое.
+- `DesktopSpaces.Core`: space model, path validation, atomic JSON storage,
+  desktop redirection transactions and recovery. No Windows UI dependencies.
+- `DesktopSpaces.App`: Windows Forms, tray integration, Win32 hooks, COM Windows
+  Shell integration, wallpaper and attachment to the desktop surface.
+- `DesktopSpaces.Tests`: independent model and failure-recovery checks. The
+  runner returns a nonzero exit code on failure.
 
-Первое пространство использует исходный рабочий стол Проводника. Для остальных
-создаются `IExplorerBrowser` и `IFolderView` в дочерней поверхности рабочего
-стола. Позиции читаются и восстанавливаются через `IFolderView`, без отправки
-указателей в процесс Проводника. Приложение не внедряет DLL в Explorer.
+The first space uses Explorer's original desktop. Additional spaces use
+`IExplorerBrowser` and `IFolderView` within a child desktop surface. Icon
+positions are read and restored through `IFolderView`, without sending pointers
+into Explorer's process. The application does not inject a DLL into Explorer.
 
-Прикрепление к `SHELLDLL_DefView` — зависимость от реализации оболочки Windows,
-а не стабильный публичный контракт размещения стороннего рабочего стола.
-Приложение проверяет существование поверхности и пытается восстановить её
-после перезапуска Проводника. Требуются испытания на конкретных сборках Windows.
+Attachment to `SHELLDLL_DefView` depends on the Windows Shell implementation;
+it is not a stable public hosting contract for third-party desktops. The app
+checks that the surface exists and attempts to reattach after Explorer restarts.
+Specific Windows builds still require testing.
 
-## Файлы и путь рабочего стола
+## Files and the Desktop path
 
-Папка первого пространства не переименовывается. Новые пространства получают
-GUID и постоянную папку. Смена отображения сохраняет системный Known Folder
-первого пространства. Операции с содержимым выполняет
-Windows Shell. Пути не объединяются через junction: такая подмена могла бы
-изменить смысл исходного абсолютного пути во время OLE-переноса.
+The first space's folder is not renamed. New spaces receive GUIDs and permanent
+folders. Switching the displayed space preserves the first space's system
+Known Folder path. Windows Shell performs operations on folder contents.
+Folders are not combined through junctions: replacing a path during an OLE drag
+could change the meaning of the source's absolute path.
 
-Для сохранения из сторонней программы в другое пространство выбирается его
-папка. Системный пункт «Рабочий стол» всегда соответствует первому пространству.
+To save from another application into another space, select that space's folder.
+The system Desktop location always corresponds to the first space.
 
-## Восстановление
+## Recovery
 
-1. Проверить текущий исходный путь и записать журнал с PID и временем запуска.
-2. Запустить защитный процесс, наблюдающий именно за этим экземпляром PID.
-3. Перед сменой пути записать в журнал старый и целевой допустимые пути.
-4. Вызвать Windows API и проверить новый путь.
-5. При ошибке попытаться вернуть предыдущий путь; сохранить журнал при сбое.
-6. При выходе, завершении сеанса, аварии или следующем запуске восстановить
-   исходный путь, только если текущий входит в список путей этого сеанса.
+The session journal records the original path, process ID and start time before
+the app changes desktop visibility. A watchdog monitors that exact process
+instance. Legacy redirection transactions, retained for old journals and
+diagnostic modes, follow these steps:
 
-Иначе пользователь получает ошибку: чужое перенаправление не затирается.
-Операции сессии защищены блокировкой от гонки с обработчиком завершения Windows.
-Настройки записываются во временный файл с flush, затем заменяют основной
-атомарно с сохранением предыдущей копии.
+1. Validate the original path and write the process identity to the journal.
+2. Start the watchdog for that process instance.
+3. Before redirecting, journal the previous and allowed destination paths.
+4. Call the Windows API and verify the new path.
+5. On failure, try to restore the previous path and retain the journal if
+   rollback also fails.
+6. On exit, session ending, crash or the next launch, restore the original path
+   only if the current path belongs to that session's recorded paths.
 
-## Ввод и перенос
+An unrelated external redirection is left intact and reported as an error.
+A lock protects session operations from races with Windows session-ending
+handlers. Settings are flushed to a temporary file, then atomically replace the
+primary file while retaining its previous version as a backup.
 
-Low-level hooks не регистрируют Alt + цифры постоянно глобально: они
-обрабатывают ввод только в контексте рабочего стола/переноса на него.
-Колбэки выполняют короткую проверку и передают работу в UI-поток.
-AltGr, Shift и клавиша Windows исключены. Сначала проверяется конфликт с
-чужой глобальной регистрацией. Проверка не может обнаружить все сторонние hooks.
+## Input and transfers
 
-Hit testing внутри своих ListView допускает локальные сообщения с указателями.
-Для настоящего рабочего стола используется MSAA (`IAccessible.accHitTest`), с резервной UI Automation; отправка локальных
-указателей в чужой процесс запрещена. При невозможности определить элемент
-двойной щелчок не переключает пространство.
+Low-level hooks do not permanently register Alt + number shortcuts globally.
+They handle input in the desktop/desktop-transfer context. Callbacks perform a
+short check and dispatch work to the UI thread. AltGr, Shift and the Windows
+key are excluded. The app first checks for another application's global
+registration; this cannot detect every third-party hook.
 
-Во время OLE-переноса исходное представление не уничтожается и не скрывается:
-новое оказывается выше него. При возврате на первый рабочий стол дочерняя
-поверхность перемещается ниже настоящего списка значков. После отпускания
-ЛКМ лишние представления скрываются. Созданные представления остаются в памяти; первые девять пространств постепенно подготавливаются в простое.
-Непрерывное перетаскивание требует отдельной ручной проверки.
+Hit testing within the app's own ListViews can use local pointer-bearing
+messages. The original desktop uses MSAA (`IAccessible.accHitTest`), with a UI
+Automation fallback. Local pointers must never be sent into another process.
+If the app cannot identify the hit element, a double-click does not switch
+spaces.
 
-Настоящая поверхность значков использует цветовой ключ WS_EX_LAYERED. В её
-прозрачных областях второе дочернее окно с альфой 1/255 принимает мышь и OLE
-и передаёт события активному Shell view. Исходный список значков скрывается
-до возврата на первое пространство; его видимость предварительно записывается
-в журнал и восстанавливается watchdog. При удержании ЛКМ источник остаётся
-видимым до завершения переноса. Статичные обои отрисовываются только в демонстрации.
+During an OLE drag, the source view is retained. The new view is placed above
+it. When returning to the first desktop, the child surface moves below the real
+icon list. Extra views are hidden after the mouse button is released. Created
+views stay in memory, and the first nine spaces are gradually preloaded while
+idle. Continuous dragging also requires manual acceptance testing.
 
-OLE явно инициализируется через OleInitialize до создания Shell views. Обработчик
-приёма запрашивается у самого текущего представления (GetCurrentView IID_IDropTarget),
-а не через SVGIO_BACKGROUND. При переносе элементов внутри той же папки приложение
-меняет позиции через IFolderView, сохраняя взаимное расположение нескольких значков;
-внешние файловые операции выполняет Windows Shell. При пересоздании списка или
-сбросе его цвета оформление восстанавливается без пересоздания всего браузера.
+The icon surface uses `WS_EX_LAYERED` with a color key. In its transparent areas,
+a second child window with alpha 1/255 receives mouse and OLE events and forwards
+them to the active Shell view. Before hiding the original icon list, its
+visibility is journaled for watchdog recovery. During a held drag, the source
+window remains alive; the 0.1.3 masking behavior is described below. Static
+wallpaper rendering is used only in demo mode.
 
-`Test-Surface.ps1` проверяет настоящий OLE IDataObject/IDropTarget на временных
-папках и движущемся фоне. `Test-DesktopIntegration.ps1` отдельно проверяет настоящий
-Desktop Known Folder, отсутствие окна панели задач, видимость значков и восстановление
-после штатного выхода и принудительного завершения. Эти проверки не входят в CI,
-если они изменяют настоящий системный путь пользователя.
+`OleInitialize` runs before creating Shell views. The receiving handler is
+queried from the current view (`GetCurrentView`, `IID_IDropTarget`), rather than
+`SVGIO_BACKGROUND`. Within the same folder, `IFolderView` updates icon positions
+while preserving the relative positions of grouped icons. Windows Shell handles
+external file operations. Recreated lists and reset colors are repaired without
+rebuilding the entire browser.
 
-## Исправления 0.1.2
+`Test-Surface.ps1` exercises real OLE `IDataObject`/`IDropTarget` interfaces using
+temporary folders and a moving background. `Test-DesktopIntegration.ps1`
+separately checks the real Desktop Known Folder, absence of a taskbar window,
+icon visibility, and recovery after normal exit or forced termination. Checks
+that change the user's actual system Desktop path are excluded from regular CI.
 
-BrowseToIDList получает PIDL с явным префиксом This PC / диск, чтобы родитель
-файла не зависел от текущего Desktop Known Folder. В противном случае Shell
-может связать обычную папку через относительный Desktop PIDL, и при следующем
-перенаправлении старый объект данных укажет на другой путь.
+## 0.1.2 changes
 
-При перетаскивании с оригинального рабочего стола смена системного пути
-откладывается до получения IDataObject: источники материализуются как абсолютный
-CF_HDROP, затем путь переключается. Тот же стабильный объект используется в Drop,
-включая отпускание над значками. Файловый буфер обмена оригинального рабочего
-стола фиксируется перед переключением, с сохранением Preferred DropEffect.
+`BrowseToIDList` receives a PIDL with an explicit This PC/volume prefix so the
+file's parent does not depend on the current Desktop Known Folder. Otherwise,
+the Shell can bind a normal folder through a Desktop-relative PIDL, and later
+redirection can make an existing data object point to a different path.
 
-FitDesktop изменяет размеры и порядок окон только после реального изменения
-размеров или повторного прикрепления. ListView использует двойную буферизацию;
-валидные HWND и имена по PIDL кэшируются. Сбор раскладки пропускается во время
-удержания ЛКМ. Периодическое сохранение JSON использует неизменяемый снимок в
-фоновом потоке, общий write gate и номер редакции; более старое сохранение не
-может затереть более новое. Журнал перенаправления по-прежнему синхронно
-сбрасывается на диск до изменения Windows.
+In the earlier redirecting mode, changing the system path during a drag from
+the original desktop was delayed until `IDataObject` became available. Source
+paths were materialized as absolute `CF_HDROP` entries before switching the
+path. The same stable data object was used for Drop, including drops over icons.
+File clipboard data from the original desktop was stabilized before switching,
+while preserving `Preferred DropEffect`.
 
-## Исправления 0.1.3
+`FitDesktop` changes size and window order only after an actual size change or
+reattachment. ListViews use double buffering. Valid HWNDs and names keyed by
+PIDL are cached. Layout collection is skipped while the left mouse button is
+held. Periodic JSON saves use an immutable snapshot on a background thread, a
+shared write gate and a revision number, preventing an older save from
+replacing a newer one. Redirection journals are still synchronously flushed
+before changing Windows state.
 
-Обнаружено наследование MSIX AppData virtualization от процесса запуска:
-внутри приложения путь `%LOCALAPPDATA%\DesktopSpaces` содержал приватные файлы,
-но обычный Explorer видел другую папку по тому же адресу. Проверки внутри
-процесса не выявляли это различие. Теперь `AppStorage.Root` находится в
-`%USERPROFILE%\.desktop-spaces`, вне перенаправляемой AppData. Первичная миграция
-выбирает самую свежую конфигурацию, разрешает её пути относительно физического
-LocalCache пакета и копирует файлы до атомарной записи новой конфигурации.
-Исходные файлы не удаляются; повторный запуск не повторяет миграцию.
+## 0.1.3 changes
 
-Переключение не меняет системный путь и буфер обмена. Код старых транзакций
-сохранён для восстановления журналов предыдущих версий и диагностических проб.
-На первом пространстве фокус возвращается настоящему списку Explorer: скрытый
-folder view больше не должен получать Ctrl+V вместо текущего рабочего стола.
+The launching process could pass MSIX AppData virtualization to the app. Inside
+the app, `%LOCALAPPDATA%\DesktopSpaces` contained private files, while ordinary
+Explorer saw a different folder at the same path. In-process checks missed that
+difference. `AppStorage.Root` now uses `%USERPROFILE%\.desktop-spaces`, outside
+virtualized AppData. First-run migration selects the newest configuration,
+resolves its paths against the package's physical `LocalCache`, and copies files
+before atomically writing the new configuration. Originals are retained and a
+successful migration is not repeated on subsequent launches.
 
-Пока удерживается мышь, неактивное окно источника сохраняется, но его оконный
-регион пуст. Это убирает наложение значков под прозрачной поверхностью. При
-возврате, выходе или восстановлении watchdog регион настоящего списка сбрасывается.
-Таймер индикатора не скрывает источник во время удержания, а предварительная
-загрузка представлений откладывается до отпускания мыши.
+Switching no longer changes the system folder path or clipboard. Older
+transaction code remains for recovering previous journals and for diagnostic
+probes. Returning to the first space restores focus to Explorer's real icon
+list, so a hidden folder view does not receive Ctrl + V instead of the current
+desktop.
 
-При переносе поверх файла выбирается ближайшая свободная ячейка. После появления
-элемента проверяется фактическая позиция через `GetItemPosition`; успешный HRESULT
-не считается подтверждением итоговой раскладки. Проверка продолжается через
-асинхронное завершение Shell Drop, а обслуживание представления устраняет
-оставшиеся коллизии. Чтение результата размещения не вызывает `MaintainView`,
-чтобы восстановление предыдущей раскладки не отменяло только что выполненный перенос.
+While the mouse button is held, an inactive source window is retained with an
+empty window region. This prevents its icons from showing through the
+transparent surface. Returning, exiting or watchdog recovery resets the real
+list's window region. The indicator timer does not hide a held drag's source,
+and view preloading pauses until the mouse button is released.
+
+Dropping over a file selects the nearest free cell. After the item appears,
+`GetItemPosition` verifies its actual position; a successful HRESULT alone is
+not proof of the final layout. Checks continue through asynchronous Shell Drop
+completion, and view maintenance repairs remaining collisions. Reading the
+placement result does not invoke `MaintainView`, which could restore an earlier
+layout over the new position.
+
+Layout and transfer identities use `SIGDN_PARENTRELATIVEPARSING` names, including
+file extensions. This avoids relying on friendly display names that can omit
+extensions when Explorer hides them.

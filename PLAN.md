@@ -1,146 +1,147 @@
-# План приложения пространств рабочего стола Windows
+# Windows desktop spaces application plan
 
-Статус: реализована предварительная версия 0.1.3; пользователь подтвердил основной
-сценарий на Windows 11, включая перезагрузку. Проверка Windows 10 продолжается.
-Дата: 21 октября 2026 года.
-Рабочее название: DesktopSpaces. Публичный репозиторий: desktop-spaces
-в личном аккаунте пользователя: https://github.com/itssergou/desktop-spaces.
-Исходники опубликованы 25 октября 2026 года.
-Актуальные результаты проверки: docs/VALIDATION.md. Лицензия: MIT.
-Ниже сохранены требования и исходный план; подтверждённые ограничения
-первой версии описаны в README.md.
+Status: the 0.1.3 preview is implemented. The user confirmed the main workflow
+on Windows 11, including a reboot. Windows 10 validation remains pending.
+Original plan date: October 21, 2026.
+Project name: DesktopSpaces. Public repository:
+https://github.com/itssergou/desktop-spaces.
+The source was published on October 25, 2026.
+Current validation results: [docs/VALIDATION.md](docs/VALIDATION.md). License: MIT.
 
-## Назначение
+This document preserves the original requirements and implementation plan.
+The implemented behavior and confirmed limitations of the first version are
+described in [README.md](README.md).
 
-Утилита расширяет рабочий стол Windows отдельными пространствами для ярлыков,
-файлов и папок. Пользователь самостоятельно организует их содержимое.
-Первое пространство — существующий рабочий стол пользователя.
-Создавать его пустым или автоматически убирать его содержимое не требуется.
+## Purpose
 
-## Согласованные требования
+Extend the Windows desktop with separate spaces for shortcuts, files and
+folders. Users organize each space as they prefer. The first space is the
+user's existing desktop. It does not need to start empty, and the app must not
+automatically clear it.
 
-- Поддерживать Windows 10 и Windows 11.
-- Работать в трее, без кнопки приложения на панели задач.
-- Открывать настройки из меню значка в трее.
-- По умолчанию иметь два пространства; второе изначально пустое.
-- Позволять менять количество пространств, их названия и порядок.
-- Переключать пространства двойным щелчком ЛКМ по пустому месту рабочего стола.
-- При нескольких пространствах переключать их по кругу.
-- Не переключать пространство при двойном щелчке по элементу.
-- Переключать пространство одновременно на всех мониторах.
-- Хранить отдельное содержимое и расположение значков каждого пространства.
-- Сохранять привычные операции Windows: открытие, выделение, переименование,
-  создание, копирование, вставку, удаление, контекстное меню и перетаскивание.
-- Направлять новое сохранение в «Рабочий стол» из сторонних программ
-  в пространство, активное на момент разрешения пути назначения.
-- Не переключать и не закрывать открытые окна программ при смене пространства.
-- При штатном полном выходе возвращать первое пространство.
-- Оставлять содержимое остальных пространств доступным в обычных папках.
-- Подготовить исходный код для публичного open-source репозитория GitHub.
+## Agreed requirements
 
-## Переключение с клавиатуры
+- Support Windows 10 and Windows 11.
+- Run in the system tray, without an application taskbar button.
+- Open settings from the tray icon menu.
+- Provide two spaces by default, with the second initially empty.
+- Let users change the number of spaces, their names and their order.
+- Switch spaces by double-clicking empty desktop space.
+- Cycle through all spaces when more than one exists.
+- Do not switch when the user double-clicks an item.
+- Switch all monitors together.
+- Keep separate contents and icon positions for each space.
+- Preserve familiar Windows operations: opening, selection, renaming, creation,
+  copying, pasting, deletion, context menus and drag and drop.
+- Originally requested: saves to Desktop from other applications should target
+  the space active when the destination path is resolved. The first version's
+  agreed fallback keeps the system Desktop location on the first space; see
+  the README for saving to other spaces.
+- Do not switch or close application windows when changing spaces.
+- Return to the first space on a normal full exit.
+- Keep other spaces' contents accessible as ordinary folders.
+- Prepare the source for a public open-source GitHub repository.
 
-- Alt + 1…9 выбирает пространство с соответствующим номером.
-- Используется верхний ряд цифр; цифровой блок не назначается по умолчанию.
-- Число пространств не ограничивается девятью: остальные доступны из трея.
-- Выбор уже активного или отсутствующего пространства ничего не меняет.
-- Удержание сочетания не должно вызывать повторные переключения.
-- Сочетания действуют при работе с рабочим столом и во время поддерживаемого
-  переноса между пространствами. В остальных приложениях ввод сохраняется.
-- Постоянная глобальная регистрация, которая поглощает Alt + цифры в других
-  приложениях, не соответствует этому требованию.
-- Добавить настройку отключения и переназначения сочетаний.
-- При обнаруженном конфликте не отбирать сочетание у другого приложения;
-  показывать понятный статус и оставлять переключение через трей.
+## Keyboard switching
 
-### Проверка доступности, выполненная 21 октября 2026 года
+- Alt + 1-9 selects the corresponding space.
+- Use the number row; do not assign the numeric keypad by default.
+- Do not limit the number of spaces to nine. Other spaces remain available
+  through the tray menu.
+- Selecting the active space or a nonexistent space has no effect.
+- Holding a shortcut must not trigger repeated switches.
+- Handle shortcuts in the desktop context and during supported drag transfers.
+  Preserve normal input in other applications.
+- A permanent global registration that consumes Alt + number keys in other
+  applications does not meet this requirement.
+- Allow users to disable or change the shortcuts.
+- On a detected conflict, do not take the shortcut from another application.
+  Show a clear status and keep tray-based switching available.
 
-На текущем компьютере Alt + 1…9 успешно зарегистрированы через RegisterHotKey
-с MOD_ALT | MOD_NOREPEAT и сразу освобождены через UnregisterHotKey.
-Для всех девяти сочетаний регистрация и освобождение завершились успешно.
+### Availability check performed on October 21, 2026
 
-В официальном списке стандартных сочетаний Windows не указано назначение
-Alt + цифры для рабочего стола. Это и проверка регистрации не доказывают
-отсутствие локальных обработчиков клавиш, перехватчиков сторонних утилит
-или конфликтов на другом компьютере. Поэтому обработка должна учитывать
-контекст и выбранный способ перехвата ввода.
+On the development computer, Alt + 1-9 was successfully registered using
+`RegisterHotKey` with `MOD_ALT | MOD_NOREPEAT` and immediately released with
+`UnregisterHotKey`. Registration and release succeeded for all nine shortcuts.
 
-## Перенос между пространствами
+The official Windows shortcut list does not assign Alt + number keys to the
+desktop. Neither that list nor the registration test proves the absence of
+local key handlers, third-party hooks or conflicts on another computer.
+Handling must therefore respect the current context and input mechanism.
 
-Целевой сценарий:
+## Moving items between spaces
 
-1. Пользователь начинает перетаскивать файл, папку или ярлык.
-2. Удерживая ЛКМ, нажимает Alt + номер нужного пространства.
-3. Пространство меняется, операция перетаскивания продолжается.
-4. Пользователь отпускает Alt, выбирает место и отпускает ЛКМ.
-5. Элемент переносится; если перетаскивание отменено, он остаётся в источнике.
+Target workflow:
 
-До отпускания ЛКМ содержимое не перемещается только из-за переключения.
-Проверить перенос нескольких элементов, повторное переключение в одном
-перетаскивании, отмену Escape, совпадения имён и обычные модификаторы
-копирования/создания ярлыка. Учесть влияние Alt на действие при отпускании.
-Предусмотреть также перенос через вырезание и вставку.
+1. The user starts dragging a file, folder or shortcut.
+2. While holding the left mouse button, they press Alt + the target space number.
+3. The space switches and the drag operation continues.
+4. The user releases Alt, chooses a location and releases the left mouse button.
+5. The item is transferred. If the drag is canceled, it remains at the source.
 
-## Техническая основа: сначала прототип
+Switching alone must not move contents before the mouse button is released.
+Test multiple items, repeated switching during one drag, Escape cancellation,
+name conflicts and normal copy/shortcut modifiers. Account for Alt's effect on
+the action performed when the user drops an item. Also support cut and paste.
 
-Предварительный стек: C# и .NET, WPF для настроек, Win32/Windows Shell для
-интеграции. Версию .NET выбрать при создании проекта с учётом поддерживаемых
-сборок Windows 10 и Windows 11. Окончательный способ отображения пространств
-и направления сохранений выбрать по результатам прототипа.
+## Technical approach: prototype first
 
-У каждого пространства должно быть устойчивое хранилище. Переключение
-не должно требовать копирования всего содержимого и больших файлов.
-Использование собственного представления папки через Windows Shell —
-кандидат для проверки, а не подтверждённая замена рабочего стола.
+The initial proposed stack was C# and .NET, with WPF for settings and
+Win32/Windows Shell integration. Select the .NET version against the supported
+Windows 10 and Windows 11 builds. Choose the final display and save-routing
+approach based on prototype results. The implemented settings UI uses Windows
+Forms; current architecture is documented separately.
 
-Критерии успешности прототипа:
+Each space needs stable storage. Switching must not require copying entire
+folders or large files. A custom Windows Shell folder view is a candidate to
+validate, rather than proof of full desktop compatibility.
 
-- Два пространства и переключение обоими способами на всех мониторах.
-- Контекстные меню, выделение, создание и перетаскивание ведут себя привычно.
-- Перетаскивание переживает переключение; источник данных остаётся доступен.
-- Сохранение из сторонней программы в «Рабочий стол» попадает в текущее
-  пространство. Проверяются также заранее открытый диалог сохранения,
-  сохранённый абсолютный путь и программа, кэширующая путь рабочего стола.
-  Такие случаи нельзя объявлять решёнными простой сменой отображения папки.
-- Вызов Win + D, порядок окон и фокус работают корректно.
-- Проверены пользовательский и общий рабочий стол, системные значки и OneDrive.
-- При выходе восстановлен первый рабочий стол, файлы всех пространств доступны.
+Prototype acceptance criteria:
 
-Если требования не выполняются, зафиксировать конкретные ограничения и
-обсудить компромисс до разработки основной версии. Не выдавать частичное
-совпадение с рабочим столом Windows за полную совместимость.
+- Two spaces, with both switching methods working across all monitors.
+- Familiar context menus, selection, creation and dragging.
+- A drag survives switching, with its source data remaining available.
+- Test saves to Desktop from external applications, including an already open
+  save dialog, a stored absolute path and an application that caches the Desktop
+  path. Merely changing the displayed folder does not solve these cases.
+- Correct Win + D behavior, window order and focus.
+- Checks for the user desktop, Public Desktop, system icons and OneDrive.
+- Exiting restores the first desktop, with all spaces' files still accessible.
 
-## Этапы
+If requirements cannot be met, record the specific limitations and discuss the
+tradeoff before implementing the main version. Do not describe partial
+Windows desktop compatibility as full compatibility.
 
-1. Прототип интеграции и проверка перечисленных критериев.
-2. Хранение пространств, устойчивые идентификаторы, сохранение раскладок.
-3. Переключение, перенос файлов, обработка ошибок и конфликтов имён.
-4. Трей, настройки, автозапуск по выбору пользователя и управление пространствами.
-5. Восстановление после сбоя приложения/Проводника, перезагрузки и смены мониторов.
-6. Проверки на Windows 10 и Windows 11, разных масштабах и нескольких мониторах.
-7. Документация, сборка выпусков и подготовка публичного репозитория.
+## Stages
 
-Удаление пространства с содержимым должно сохранять файлы или предлагать
-их перенос. Исходные программы, на которые указывают ярлыки, не затрагиваются.
+1. Prototype the integration and check the criteria above.
+2. Implement storage, stable identifiers and saved layouts.
+3. Implement switching, file transfers, error handling and name conflicts.
+4. Add the tray, settings, optional startup and space management.
+5. Handle app/Explorer crashes, reboot and monitor changes.
+6. Validate Windows 10 and Windows 11, different scaling and multiple monitors.
+7. Prepare documentation, release packages and the public repository.
 
-## Публичный open-source проект
+Removing a space containing files must preserve those files or offer a way to
+move them. Applications targeted by shortcuts must not be affected.
 
-- Открытые исходники и воспроизводимая сборка из публичного репозитория.
-- Открытая лицензия обязательна. Предлагаемый вариант — MIT; окончательный
-  выбор зафиксировать перед публикацией.
-- README с назначением, совместимостью, установкой, сборкой и ограничениями.
-- CONTRIBUTING с правилами участия и шаблоны сообщений об ошибках.
-- Автоматическая сборка и необходимые проверки в GitHub Actions.
-- Публикация собранных версий через GitHub Releases.
-- Проверка лицензий зависимостей и добавление требуемых уведомлений.
-- Пользовательские файлы, локальные настройки, журналы и секреты не входят
-  в исходный код. Приложению не требуется учётная запись или облачный сервис.
+## Public open-source project
 
-## Источники технической проверки
+- Open source with reproducible builds from the public repository.
+- An open-source license is required. MIT was selected for publication.
+- A README covering purpose, compatibility, installation, builds and limitations.
+- Contribution guidance and issue templates.
+- Automated builds and relevant checks in GitHub Actions.
+- Built packages published through GitHub Releases.
+- Dependency license checks and required notices.
+- No user files, local settings, logs or secrets in the source repository.
+  The application itself requires no account or cloud service.
 
-- Сочетания Windows: https://support.microsoft.com/en-au/windows/keyboard-shortcuts-in-windows-dcc61a57-8ff0-cffe-9796-cb9706c75eec
-- Регистрация сочетаний: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-registerhotkey
-- Перетаскивание OLE: https://learn.microsoft.com/en-us/windows/win32/com/drag-and-drop
-- Представление папок Shell: https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-iexplorerbrowser
-- Получение системного пути папки: https://learn.microsoft.com/en-us/windows/win32/api/shlobj_core/nf-shlobj_core-shgetknownfolderpath
-- Лицензия MIT: https://opensource.org/license/mit
+## Technical references
+
+- [Windows keyboard shortcuts](https://support.microsoft.com/en-au/windows/keyboard-shortcuts-in-windows-dcc61a57-8ff0-cffe-9796-cb9706c75eec)
+- [Shortcut registration](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-registerhotkey)
+- [OLE drag and drop](https://learn.microsoft.com/en-us/windows/win32/com/drag-and-drop)
+- [Shell folder views](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-iexplorerbrowser)
+- [Desktop Known Folder paths](https://learn.microsoft.com/en-us/windows/win32/api/shlobj_core/nf-shlobj_core-shgetknownfolderpath)
+- [MIT license](https://opensource.org/license/mit)

@@ -1,109 +1,114 @@
-# Проверка версии 0.1.3
+# Version 0.1.3 validation
 
-Дата: 21 октября 2026 года. Windows 11 x64, два монитора.
+Date: October 21, 2026. Windows 11 x64, two monitors.
 
-- Release с предупреждениями как ошибками: успешно, 0 предупреждений.
-- Основные проверки: 45/45; Windows-проверки: 6/6. Включены поиск свободной
-  ячейки, группы значков, границы экрана, заполненная сетка и миграция старого
-  хранилища из MSIX LocalCache с сохранением исходных файлов.
-- Настоящее приложение запущено вне MSIX, в трее, на рабочем столе пользователя.
-  Статус подтверждает `Demo=false`, `PackagedProcess=false`, подключение к Explorer
-  и общий физический корень `%USERPROFILE%\.desktop-spaces`.
-- Пользователь подтвердил работу переноса между первым и вторым пространствами
-  после исправления физического хранилища, включая обратное направление.
-- Наложение при переносе с первого на второе воспроизведено повторно на настоящем
-  рабочем столе. Успешный HRESULT размещения сам по себе оказался недостаточной
-  проверкой: конечная позиция могла отличаться от запрошенной.
-- После исправления пользователь повторил удержание файла + Alt+2 с отпусканием
-  поверх другого файла и подтвердил отсутствие наложения. В журнале от 23:19
-  фактическая позиция тестового значка изменилась с (40,217) на (13,296), соседний
-  остался на (13,198). Проверка охватывает завершение асинхронного размещения Shell.
-- После дополнительного переключения 2 → 1 → 2 реальный экземпляр сохранил
-  позиции (13,296) и (13,198); наложение не вернулось. Отдельное демонстрационное
-  окно для этой приёмки не использовалось.
-- Пользователь подтвердил финальную проверку после перезагрузки: автозапуск
-  в трее, сохранение пространств, настроек, файлов и позиций значков, переключение,
-  перенос в обе стороны и работу обоев на своей системе Windows 11.
-  Это ручная пользовательская приёмка, а не автоматический отчёт о перезагрузке.
+- Release build with warnings treated as errors: passed, zero warnings.
+- Core checks: 45/45. Windows checks: 6/6. Coverage includes finding free icon
+  cells, group placement, screen boundaries, a full grid, and migration from
+  legacy MSIX LocalCache storage while retaining original files.
+- The real application ran outside MSIX, in the tray, on the user's desktop.
+  Status confirmed `Demo=false`, `PackagedProcess=false`, attachment to Explorer,
+  and the shared physical storage root `%USERPROFILE%\.desktop-spaces`.
+- The user confirmed transfers between the first and second spaces, including
+  the reverse direction, after the physical storage fix.
+- Icon overlap when transferring from the first space to the second was
+  reproduced again on the real desktop. A successful placement HRESULT alone
+  was insufficient: the final position could differ from the requested one.
+- After the fix, the user repeated a held drag with Alt + 2 and dropped directly
+  over another file, confirming that the icons no longer overlapped. The 23:19
+  trace showed the test icon moving from (40,217) to (13,296), while the adjacent
+  icon stayed at (13,198). Verification covered asynchronous Shell placement.
+- After another 2 -> 1 -> 2 switch, the real instance retained (13,296) and
+  (13,198), with no renewed overlap. No separate demo window was used for this
+  acceptance check.
+- The user confirmed the final post-reboot workflow: tray startup; preserved
+  spaces, settings, files and icon positions; switching; transfers in both
+  directions; and wallpaper behavior on their Windows 11 system. This is manual
+  user acceptance, not an automatically collected reboot report.
 
-Windows 10, другие конфигурации DPI и мониторов пока не считаются проверенными
-этой сборкой. Проверка Wallpaper Engine относится к конфигурации пользователя.
-Исторические результаты ниже описывают
-предыдущую версию и не заменяют текущую ручную приёмку.
+Windows 10 and other DPI/monitor configurations remain unvalidated.
+Wallpaper Engine acceptance applies to the user's configuration. Historical
+results below describe earlier versions and do not replace current manual
+acceptance testing.
 
-25 октября при первой сборке на GitHub Actions проверка OLE выявила зависимость
-от скрытых расширений файлов: Shell возвращал отображаемые имена без `.txt`,
-поэтому код размещения не находил элементы по их настоящим именам. Для ключей
-раскладки и переноса теперь запрашивается `SIGDN_PARENTRELATIVEPARSING`.
-Существующая проверка `Test-Surface.ps1` проверяет этот сценарий на runner с
-настройками Проводника по умолчанию; подробный отчёт выводится в журнал при сбое.
+On October 25, the first GitHub Actions build exposed a hidden-extension issue
+in the OLE check. The Shell returned friendly names without `.txt`, preventing
+placement code from finding items by their actual filenames. Layout and transfer
+keys now use `SIGDN_PARENTRELATIVEPARSING`. The existing `Test-Surface.ps1` check
+covers the runner's default Explorer settings and prints its detailed report
+on failure.
 
-После исправления [GitHub Actions #40215652797](https://github.com/itssergou/desktop-spaces/actions/runs/40215652797)
-успешно выполнил Release-сборку, 45 основных и 6 Windows-проверок, проверки Shell
-и OLE, упаковку автономного выпуска и сохранение артефактов.
+After the fix, [GitHub Actions #40215652797](https://github.com/itssergou/desktop-spaces/actions/runs/40215652797)
+successfully completed the Release build, 45 core checks, 6 Windows checks,
+Shell and OLE checks, portable packaging and artifact upload.
 
-## История проверки версии 0.1.2
+## Version 0.1.2 validation history
 
-Дата: 21 октября 2026 года. Windows 11 x64 (26200), .NET SDK 8.0.424.
-Успешная проверка отдельного механизма не заменяет приёмку на всех версиях Windows.
+Date: October 21, 2026. Windows 11 x64 (26200), .NET SDK 8.0.424.
+Passing a component check does not establish acceptance on every Windows version.
 
-| Проверка | Результат |
+| Check | Result |
 |---|---|
-| Release, предупреждения как ошибки | Успешно, 0 предупреждений |
-| Модель, JSON, удаление, порядок, восстановление | 41/41 |
-| Windows: удаление выбранной последней строки, выбор по ID после сортировки, путь автозапуска с пробелами, фиксация источника переноса | 4/4 |
-| Native Shell: два элемента и чтение позиций | `Test-Shell.ps1`, успешно |
-| OLE: перемещение значка внутри папки | `Test-Surface.ps1`: позиция изменилась и сохранилась после файловой операции |
-| OLE: перенос из другого Shell view на прозрачный фон | Файл появился в целевой папке, содержимое доступно; используется настоящий Shell IDataObject/IDropTarget |
-| Прозрачность и отсутствие белой рамки | Визуально проверены на движущемся тестовом фоне; статичные обои больше не подставляются |
-| Настройки: создание и центрирование диалога | Проверено мышью |
-| Переименование F2 и медленным повторным щелчком | Проверено, оба способа открывают редактирование имени |
-| Сортировка мышью и сохранение после перезапуска приложения | Проверено |
-| Подсказка «?» и инструкция переноса | Проверено |
-| Настоящий первый рабочий стол: распознавание пустоты | 162 пустые точки распознаны; 6 занятых отклонены; центр настоящего значка не считается пустотой |
-| Переключение и системный путь Desktop | `Test-DesktopIntegration.ps1`, успешно |
-| Повторное открытие подготовленного пространства | Наблюдалось внутреннее время 19–73 мс; это не измерение задержки кадров |
-| Выход / принудительное завершение | Исходный путь и видимость значков восстановлены, журнал очищен |
-| Основное окно на панели задач | Отсутствует в настоящем режиме |
-| Автозапуск | Запись Run включается и удаляется, команда с кавычками проверяется чтением; исходная запись после теста восстановлена |
-| Сохранение при повторном запуске приложения | Имена и порядок подтверждены; раскладки покрыты отдельными проверками |
-| Непрерывное перетаскивание мышью с Alt + цифрой | Реализовано сохранение источника; необходима повторная ручная приёмка на реальном рабочем столе |
-| Wallpaper Engine | Нужна пользовательская приёмка с активными обоями; прозрачность проверена на собственном живом фоне |
-| Windows 10, разные DPI, отключение мониторов, перезапуск Explorer | Натурные испытания ожидаются |
+| Release build, warnings treated as errors | Passed, zero warnings |
+| Model, JSON, removal, ordering and recovery | 41/41 |
+| Windows: removing the selected final row, selection by ID after reorder, startup paths with spaces, stable transfer sources | 4/4 |
+| Native Shell: two entries and reading positions | `Test-Shell.ps1` passed |
+| OLE: moving an icon within its folder | `Test-Surface.ps1`: the position changed and persisted after a file operation |
+| OLE: transferring from another Shell view onto the transparent background | The file appeared in the target folder and its contents were readable; real Shell IDataObject/IDropTarget interfaces were used |
+| Transparency and absence of a white border | Visually checked against a moving test background; static wallpaper was no longer substituted |
+| Settings: creating and centering the dialog | Checked with the mouse |
+| Renaming with F2 and a slow second click | Both methods opened name editing |
+| Mouse reordering and persistence after app restart | Checked |
+| Question-mark tooltip and transfer instructions | Checked |
+| Real first desktop: empty-space hit testing | 162 empty points accepted; 6 occupied points rejected; the center of a real icon was not treated as empty |
+| Switching and the system Desktop path | `Test-DesktopIntegration.ps1` passed |
+| Reopening a prepared space | Internal timing observed at 19-73 ms; this is not a measurement of frame latency |
+| Normal exit and forced termination | The original path and icon visibility were restored, and the journal was cleared |
+| Taskbar application window | Absent in real desktop mode |
+| Startup registration | The Run entry was enabled and removed, the quoted command was checked by reading it back, and the original entry was restored after the test |
+| Persistence across app restart | Names and order confirmed; layouts covered by separate checks |
+| Continuous held drag with Alt + number | Source preservation implemented; real-desktop manual acceptance still pending at that version |
+| Wallpaper Engine | User acceptance with active wallpaper still pending at that version; transparency checked against a custom moving background |
+| Windows 10, different DPI, monitor disconnection and Explorer restart | Physical-system testing pending |
 
-Средство автоматического управления мышью не подтвердило непрерывное перетаскивание
-в native Shell: оно не завершалось и в обычном непрозрачном представлении. Это не
-считается успешным ручным тестом. Системный путь приёма OLE проверен отдельным
-сценарием с настоящими Shell-объектами данных и проверкой файлов и позиций.
+Automated mouse control did not confirm a continuous native Shell drag: it
+also failed to complete in an ordinary opaque view. That was not counted as a
+successful manual test. The system OLE receiving path was checked separately
+with real Shell data objects, file checks and position checks.
 
-## Повторная проверка после замечаний к 0.1.1
+## Follow-up checks after 0.1.1 feedback
 
-- Воспроизведена неоднозначность Desktop-relative PIDL: при перенаправлении корня
-  получался неверный путь источника. Открытие через This PC / диск устраняет её.
-- `scripts/Test-Transfer.ps1`: перенос туда и обратно при настоящей смене Known Folder,
-  неизменность адресов источников и точное содержимое файла подтверждены.
-- Отдельный Windows-тест проверяет, что снимок источников не меняется вместе с исходным IDataObject.
-- Убраны повторные resize/Z-order операции таймера, лишние фоновые перерисовки и повторное
-  COM-получение имён. Периодический flush JSON перенесён из UI-потока.
-- Круглая кнопка «?» проверена визуально. Оценка плавности мышью остаётся частью ручной приёмки;
-  отсутствие всех задержек на машине пользователя пока не утверждается.
+- Reproduced ambiguous Desktop-relative PIDLs: redirecting the root caused an
+  incorrect source path. Binding through This PC/the volume removed that
+  ambiguity.
+- `scripts/Test-Transfer.ps1` confirmed round-trip transfer while actually
+  changing the Known Folder path, stable source addresses and exact file
+  contents.
+- A separate Windows test checked that a source snapshot remains stable when
+  the original IDataObject changes.
+- Removed repeated timer-driven resize/Z-order operations, redundant background
+  redraws and repeated COM name lookups. Periodic JSON flushing moved off the
+  UI thread.
+- The circular question-mark button was checked visually. Mouse responsiveness
+  remained part of manual acceptance; the absence of every possible stall on
+  the user's machine was not claimed.
 
-## Проверка после перезагрузки компьютера
+## Post-reboot checklist
 
-Основной сценарий подтверждён пользователем после финального исправления 0.1.3.
-Список сохраняется для повторной проверки следующих выпусков.
+The user confirmed the main workflow after the final 0.1.3 fix. This checklist
+is retained for validating future releases.
 
-- [x] Перезагрузить компьютер и войти в Windows при включённом автозапуске.
-- [x] Убедиться, что DesktopSpaces появился в трее, без кнопки панели задач.
-- [x] Проверить имена, порядок, настройки, файлы, папки и позиции значков во всех пространствах.
-      При запуске открывается первый рабочий стол.
-- [x] Проверить переключение и перенос файлов в обе стороны.
-- [x] Проверить обои на первом и дополнительных пространствах.
-- [ ] Выключить автозапуск, перезагрузить ещё раз и убедиться, что приложение не запустилось.
+- [x] Reboot and sign in with startup enabled.
+- [x] Confirm that DesktopSpaces appears in the tray without a taskbar button.
+- [x] Check names, order, settings, files, folders and icon positions in every
+      space. Startup opens the first desktop.
+- [x] Check switching and transfers in both directions.
+- [x] Check wallpaper in the first and additional spaces.
+- [ ] Disable startup, reboot again and confirm that the app does not start.
 
-Последний пункт с отдельной повторной перезагрузкой при выключенном автозапуске
-не подтверждался явно; изменение записи Run покрыто предыдущими проверками.
+The final item, a separate reboot with startup disabled, was not explicitly
+confirmed. Earlier checks cover changes to the Run registry entry.
 
-Локальные отчёты в `artifacts` содержат пути компьютера, исключены из Git и архива выпуска.
-OneDrive Known Folder Move по-прежнему блокируется. Сборки GitHub Actions:
-https://github.com/itssergou/desktop-spaces/actions.
+Local reports in `artifacts` contain machine paths and are excluded from Git
+and release archives. OneDrive Known Folder Move remains blocked.
+[GitHub Actions builds](https://github.com/itssergou/desktop-spaces/actions).

@@ -1,4 +1,4 @@
-name: Bug report / Ошибка
+name: Bug report
 description: Report a reproducible problem without attaching personal desktop files.
 body:
   - type: input

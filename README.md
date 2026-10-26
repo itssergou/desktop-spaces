@@ -1,124 +1,125 @@
 # DesktopSpaces
 
-Незаметная утилита для отдельных пространств с ярлыками, файлами и папками
-на рабочем столе Windows. Работает в трее. Лицензия MIT.
+A Windows tray utility that gives your desktop separate spaces for shortcuts,
+files and folders. Open source under the MIT license.
 
-**Статус: 0.1.3, предварительная версия для проверки на реальных системах.**
-Она ещё не прошла полную матрицу совместимости Windows 10/11 и нескольких
-мониторов. Результаты и непроверенные сценарии перечислены в
-[docs/VALIDATION.md](docs/VALIDATION.md).
+**Status: 0.1.3 preview for testing on real systems.** The full Windows 10/11
+and multi-monitor compatibility matrix is still incomplete. See
+[validation results and remaining checks](docs/VALIDATION.md).
 
-[Скачать выпуск 0.1.3](https://github.com/itssergou/desktop-spaces/releases/tag/v0.1.3)
-· [Сообщить об ошибке](https://github.com/itssergou/desktop-spaces/issues/new/choose)
+[Download 0.1.3](https://github.com/itssergou/desktop-spaces/releases/tag/v0.1.3)
+· [Report a bug](https://github.com/itssergou/desktop-spaces/issues/new/choose)
 
-## Возможности
+## Features
 
-- Первый рабочий стол остаётся настоящим рабочим столом Windows.
-- Два пространства по умолчанию, дополнительные создаются в настройках.
-- Двойной щелчок по свободному месту переключает пространства по кругу.
-- Alt + 1…9 выбирает пространство; доступен вариант Ctrl + Alt + 1…9.
-- Одно переключение применяется ко всем мониторам.
-- Представления дополнительных папок используют Windows Shell: обычные
-  значки, контекстные меню, создание, переименование, буфер обмена и перенос.
-- Имена, порядок и расположение значков сохраняются. Первое пространство
-  нельзя удалить или переместить на другой номер.
-- Строки в настройках можно перетаскивать мышью. F2 и медленный повторный
-  щелчок по выбранному имени включают переименование.
-- Дополнительные пространства пропускают настоящий фон рабочего стола.
-  Работа с Wallpaper Engine подтверждена пользователем на своей системе Windows 11.
-- При полном выходе показывается исходный рабочий стол Windows.
-- Данные пространств доступны как обычные папки; удаление пространства
-  из списка не удаляет его содержимое.
-- Учётная запись, облачный сервис и права администратора не требуются.
+- The first space is your original Windows desktop.
+- Two spaces by default; add more in settings.
+- Double-click empty desktop space to cycle through spaces.
+- Select a space with Alt + 1-9, or choose Ctrl + Alt + 1-9 in settings.
+- All monitors switch together.
+- Additional spaces use Windows Shell folder views, with native icons, context
+  menus, file creation, renaming, clipboard operations and drag and drop.
+- Space names, order and icon positions are saved. The first space cannot be
+  removed or moved to another number.
+- Drag rows in settings to reorder spaces. Press F2 or slowly click an already
+  selected name again to rename it.
+- Additional spaces let the real desktop wallpaper show through. The user
+  confirmed Wallpaper Engine on their Windows 11 configuration.
+- Exiting the app shows the original Windows desktop.
+- Space contents remain accessible as ordinary folders. Removing a space from
+  the list does not delete its contents.
+- No account, cloud service or administrator privileges are required.
 
-## Запуск
+## Getting started
 
-Распакуйте архив `DesktopSpaces-0.1.3-win-x64.zip` в постоянную папку и
-запустите `DesktopSpaces.exe`. Переносимая сборка содержит .NET runtime;
-отдельная установка .NET для неё не нужна. Приложение не добавляет кнопку
-на панель задач. Значок может оказаться в скрытой области трея.
+Extract `DesktopSpaces-0.1.3-win-x64.zip` into a permanent folder and run
+`DesktopSpaces.exe`. The portable build includes the .NET runtime, so a separate
+.NET installation is not required. The app has no taskbar button. Its tray icon
+may appear in the hidden icons area. The application interface is currently in
+Russian.
 
-ЛКМ по значку — настройки, ПКМ — пространства, их папки и выход.
-Автозапуск включается пользователем в настройках. Если он включён,
-при запуске из новой папки запись обновляется на текущий исполняемый файл.
+Left-click the tray icon to open settings. Right-click for spaces, their folders
+and Exit. Startup at Windows sign-in is optional and can be enabled in settings.
+When enabled, starting the app from a new folder updates the startup entry to
+point to the current executable.
 
-Для ознакомления без изменения рабочего стола:
+To try the app without changing your desktop:
 
 ```powershell
 .\DesktopSpaces.exe --demo
 ```
 
-Демонстрация использует отдельные папки в `%TEMP%\DesktopSpaces.Demo`.
-Её окно имитирует область рабочего стола и не меняет его системный путь.
+Demo mode uses separate folders in `%TEMP%\DesktopSpaces.Demo`. Its window
+simulates a desktop area and does not change the system Desktop folder path.
 
-## Перенос между пространствами
+## Moving items between spaces
 
-Начните перетаскивать элемент, удерживая ЛКМ. Нажмите Alt + номер,
-отпустите Alt, затем положите элемент. Приложение сохраняет исходное
-представление на время операции. Проверка непрерывного перетаскивания
-на всех поддерживаемых версиях Windows остаётся частью приёмочных испытаний.
+Start dragging an item while holding the left mouse button. Press Alt + the
+space number, release Alt, then drop the item. The source view stays available
+for the duration of the operation. Continuous drag transfer still needs
+acceptance testing across all supported Windows versions.
 
-Также доступны вырезание и вставка: Ctrl + X → переход → Ctrl + V.
-Цифры используются с верхнего ряда клавиатуры. Правый Alt (AltGr) не
-перехватывается. Сочетания не должны действовать в других приложениях.
-Утилита проверяет конфликты с зарегистрированными глобальными сочетаниями
-при запуске и смене настройки. Чужие обработчики клавиатуры могут требовать
-выбора Ctrl + Alt или отключения этой функции.
+Cut and paste also works: Ctrl + X, switch spaces, then Ctrl + V.
 
-## Как устроено сохранение
+Use the number row above the letters. Right Alt (AltGr) is not intercepted.
+Space shortcuts should not consume input in other applications. At startup and
+when settings change, the app checks for conflicts with registered global
+shortcuts. Other keyboard hooks may require choosing Ctrl + Alt or disabling
+space shortcuts.
 
-Системный пункт **«Рабочий стол»** всегда относится к первому пространству.
-Переключение меняет видимую папку, сохраняя системный путь. Файлы при
-переключении не перемещаются. Для сохранения из другой программы в
-дополнительное пространство выберите его папку; открыть её можно из трея
-или настроек. Уже открытый документ сохраняется по своему существующему пути.
+## Saving files
 
-Не гарантируется совместимость с OneDrive Known Folder Move, корпоративным
-перенаправлением папок, заменами Проводника и другими организаторами рабочего
-стола. В этой версии работа с рабочим столом внутри OneDrive блокируется,
-чтобы не менять его привязку к синхронизации. Полная поддержка требует
-отдельных испытаний и согласованной архитектуры.
+The system **Desktop** location always refers to the first space. Switching
+changes the visible folder while preserving the system folder path. Files are
+not moved when you switch spaces. To save from another application into an
+additional space, choose that space's folder; you can open it from the tray menu
+or settings. An open document continues to save to its existing path.
 
-Системные значки и ярлыки общего рабочего стола остаются на первом
-пространстве. Дополнительные пространства показывают свои папки. Их
-контекстные меню — меню папок Windows Shell, поэтому они могут отличаться
-от фонового меню настоящего рабочего стола. В Windows 11 это может быть
-классический вариант меню.
+Compatibility is not guaranteed with OneDrive Known Folder Move, corporate
+folder redirection, Explorer replacements or other desktop organizers. This
+preview blocks OneDrive-managed desktops to avoid changing their sync binding.
+Full support requires separate testing and a compatible design.
 
-## Данные и восстановление
+System icons and Public Desktop shortcuts remain on the first space. Additional
+spaces show their own folders. Their background menus are Windows Shell folder
+menus and can differ from the real desktop menu. On Windows 11, they may use the
+classic menu style.
 
-Настройки и папки находятся в `%USERPROFILE%\.desktop-spaces`:
+## Data and recovery
 
-- `settings.json` и `.bak` — настройки и позиции значков;
-- `Spaces\<id>` — данные дополнительных пространств;
-- `recovery.json` — журнал незавершённого сеанса;
-- `last-error.log` — последняя локальная ошибка.
+Settings and space folders are stored in `%USERPROFILE%\.desktop-spaces`:
 
-Хранилище вне AppData одинаково видно Проводнику и утилите, включая запуск
-из MSIX-приложения. Старые данные из AppData и приватных `LocalCache` копируются
-при первом запуске; исходные копии сохраняются. После успешной миграции
-приложение использует только новое хранилище.
+- `settings.json` and its `.bak` file: settings and icon positions.
+- `Spaces\<id>`: additional space contents.
+- `recovery.json`: the journal for an unfinished session.
+- `last-error.log`: the most recent local error.
 
-Журнал и защитный процесс восстанавливают видимость и оконный регион исходных
-значков после аварии. Сохранена возможность восстановления перенаправлений
-предыдущих версий. Чужое изменение системного пути не перезаписывается.
+Storage outside AppData is visible at the same physical path to Explorer and
+the app, including launches from an MSIX application. On first launch, legacy
+data from AppData and package-private `LocalCache` folders is copied into the
+new storage location. Originals are retained. After a successful migration,
+the app uses only the new storage location.
 
-Чтобы вручную запустить восстановление после аварии, завершите работающий
-экземпляр и выполните:
+The journal and watchdog restore the visibility and window region of the
+original desktop icons after a crash. Recovery of folder redirections left by
+older versions is retained. Another program's change to the system folder path
+is not overwritten.
+
+For manual recovery after a crash, stop the running instance and run:
 
 ```powershell
 .\DesktopSpaces.exe --recover
 ```
 
-При отключении питания оба процесса могут завершиться без восстановления;
-повторный запуск или `--recover` обрабатывает сохранённый журнал.
-Не удаляйте папку данных, пока рабочий стол не восстановлен и нужные файлы
-не перенесены в другое место.
+A power loss can stop both processes before recovery. Restarting the app or
+running `--recover` processes the saved journal. Do not delete the data folder
+until the desktop has been restored and any files you need have been moved to
+another location.
 
-## Сборка из исходников
+## Building from source
 
-Нужны Windows и .NET 8 SDK с поддержкой Windows Desktop. Базовая цель —
-Windows 10 x64 и Windows 11 x64. ARM64 и x86 пока не проверены.
+You need Windows and the .NET 8 SDK with Windows Desktop support. The targets
+are Windows 10 x64 and Windows 11 x64. ARM64 and x86 have not been validated.
 
 ```powershell
 dotnet build DesktopSpaces.sln -c Release
@@ -126,20 +127,20 @@ dotnet run --project tests/DesktopSpaces.Tests -c Release
 .\scripts\Publish.ps1
 ```
 
-Архив выпуска, исполняемый файл и контрольные суммы появляются в `artifacts`.
-Для обновления значка есть `scripts/GenerateIcon.ps1`; SVG-исходник —
-`assets/icon.svg`. Пакет значков ICO хранится в репозитории.
+The release archive, executable and checksums are written to `artifacts`.
+Use `scripts/GenerateIcon.ps1` to regenerate the icon from `assets/icon.svg`.
+The ICO asset is included in the repository.
 
-Проект не использует внешние NuGet-библиотеки приложения. .NET и стандартные
-компоненты Windows остаются платформенными зависимостями. Для обновления
-runtime в автономной сборке её нужно пересобрать актуальным SDK.
-Переход на .NET 10 LTS запланирован до окончания поддержки .NET 8.
+The application has no external NuGet library dependencies. .NET and standard
+Windows components are platform dependencies. To update the runtime bundled
+with the portable build, rebuild it using an up-to-date SDK. Migration to
+.NET 10 LTS is planned before .NET 8 reaches the end of support.
 
-## Участие
+## Contributing
 
-См. [CONTRIBUTING.md](CONTRIBUTING.md),
-[техническую основу](docs/ARCHITECTURE.md) и [план](PLAN.md).
-Не прикладывайте к публичным сообщениям пользовательские файлы, настройки
-или журналы с личными путями без проверки их содержимого.
+See [CONTRIBUTING.md](CONTRIBUTING.md), the
+[architecture](docs/ARCHITECTURE.md) and the [project plan](PLAN.md).
+Review attachments before posting user files, settings or logs containing
+personal paths in public issues.
 
-English overview: [docs/README.en.md](docs/README.en.md).
+A shorter overview is available in [docs/README.en.md](docs/README.en.md).

@@ -29,6 +29,10 @@ placement and startup with saved state after reboot on Windows 11. Windows 10
 and other DPI/monitor configurations remain pending. Detailed validation is
 tracked in `docs/VALIDATION.md`.
 
+English documentation: [User guide](https://github.com/itssergou/desktop-spaces/blob/main/README.md),
+[architecture](https://github.com/itssergou/desktop-spaces/blob/main/docs/ARCHITECTURE.md),
+and [validation results](https://github.com/itssergou/desktop-spaces/blob/main/docs/VALIDATION.md).
+
 ## 0.1.2
 
 Fixes for follow-up testing:
